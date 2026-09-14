@@ -1,0 +1,81 @@
+package transfereddsaonly
+
+import (
+	"math/big"
+)
+
+// UtxoParams mirrors txcircuit.UtxoCircuitFields as already-computed field
+// elements supplied by the client.
+type UtxoParams struct {
+	Domain        *big.Int
+	Owner         *big.Int
+	Asset         *big.Int
+	Amount        *big.Int
+	Blinding      *big.Int
+	DataHash      *big.Int
+	RingDataHash  *big.Int
+	RingProgramID *big.Int
+}
+
+// InputParams mirrors txcircuit.Input. Every value is pre-computed client-side;
+// the prover only assigns them onto circuit signals.
+type InputParams struct {
+	Utxo              UtxoParams
+	IsDummy           *big.Int
+	StatePathElements []*big.Int // len StateTreeHeight
+	StatePathIndex    *big.Int
+
+	NullifierLowValue        *big.Int
+	NullifierNextValue       *big.Int
+	NullifierLowPathElements []*big.Int // len NullifierTreeHeight
+	NullifierLowPathIndex    *big.Int
+
+	UtxoTreeRoot      *big.Int
+	NullifierTreeRoot *big.Int
+	Nullifier         *big.Int
+
+	OwnerPkHash     *big.Int
+	NullifierSecret *big.Int
+}
+
+// OutputParams mirrors txcircuit.Output. OwnerPkHash and NullifierPk bind the
+// output owner identity; only the default confidential rail publishes its owner
+// tags. They are 0 for authority proofs.
+type OutputParams struct {
+	Utxo        UtxoParams
+	IsDummy     *big.Int
+	Hash        *big.Int
+	OwnerPkHash *big.Int
+	NullifierPk *big.Int
+}
+
+// TransferParameters is the flat, pre-computed witness for the Solana-only
+// spp_transaction circuit. This rail has no P256 gadget: there is no P256
+// pubkey/signature/message-hash, and every real input must be Solana-owned. The
+// prover does no hashing — the client computes every field.
+type TransferParameters struct {
+	NInputs  uint32
+	NOutputs uint32
+
+	Inputs  []InputParams
+	Outputs []OutputParams
+
+	ExternalDataHash *big.Int
+
+	PrivateTxHash *big.Int
+	// PublicAssets/PublicAmounts are the uniform public movement slots, both of
+	// length shared.NPublicSlots.
+	PublicAssets                 []*big.Int
+	PublicAmounts                []*big.Int
+	RingProgramID                *big.Int
+	SignerPkHashes               []*big.Int
+	AllowDummyInputs             *big.Int
+	PublishedOutputOwnerPkHashes []*big.Int
+
+	// Variant selects the Solana-only instantiation: confidential default-ring,
+	// confidential custom-ring, or ring-authority (anonymous, input owners
+	// private, no signature).
+	Variant Variant
+
+	PublicInputHash *big.Int
+}
