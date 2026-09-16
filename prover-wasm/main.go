@@ -288,20 +288,13 @@ func byteArray(value js.Value) []byte {
 	return data
 }
 
-// errorResult keeps every failure on the resolve path as a plain object. A Go
-// panic crossing into JS would tear down the whole wasm instance, so callers get
-// a value they can branch on instead.
-func errorResult(err error) any {
-	return map[string]any{"error": err.Error()}
-}
-
 // guard converts a Go panic inside a proof into an error result. gnark panics on
 // some malformed witnesses, and one bad request must not kill the instance.
-func guard(name string, fn func([]js.Value) any) js.Func {
+func guard(fn func([]js.Value) any) js.Func {
 	return js.FuncOf(func(_ js.Value, args []js.Value) (result any) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				result = errorResult(fmt.Errorf("%s panicked: %v", name, recovered))
+				result = errorResult(nil)
 			}
 		}()
 		return fn(args)
@@ -320,10 +313,10 @@ func main() {
 	keys := newRegistry()
 
 	api := js.Global().Get("Object").New()
-	api.Set("loadKey", guard("loadKey", keys.loadKey))
-	api.Set("prove", guard("prove", keys.prove))
-	api.Set("verify", guard("verify", keys.verify))
-	api.Set("loadedKeys", guard("loadedKeys", func([]js.Value) any {
+	api.Set("loadKey", guard(keys.loadKey))
+	api.Set("prove", guard(keys.prove))
+	api.Set("verify", guard(keys.verify))
+	api.Set("loadedKeys", guard(func([]js.Value) any {
 		loaded := keys.keys()
 		out := make([]any, len(loaded))
 		for i, key := range loaded {

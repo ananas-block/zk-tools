@@ -47,3 +47,11 @@ func TestCommittedProofJSONRoundTrip(t *testing.T) {
 		t.Fatal("decoded proof commitment PoK does not match")
 	}
 }
+
+func TestFromHexDoesNotExposeInvalidWitness(t *testing.T) {
+	var value big.Int
+	err := FromHex(&value, "review-private-sentinel")
+	if err == nil || err.Error() != "invalid number" {
+		t.Fatal("invalid witness must return a fixed error without the input")
+	}
+}
