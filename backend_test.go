@@ -529,11 +529,9 @@ func TestRequiredRequestFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(request), &object); err != nil {
 		t.Fatal(err)
 	}
-	referenceAssignment, err := requestAssignment(request)
-	if err != nil {
+	if _, err := requestAssignment(request); err != nil {
 		t.Fatal(err)
 	}
-	reference, _ := frontend.NewWitness(referenceAssignment, ecc.BN254.ScalarField())
 	var tested int
 	var inspect func(map[string]any, reflect.Type)
 	inspect = func(current map[string]any, expected reflect.Type) {
@@ -546,16 +544,7 @@ func TestRequiredRequestFields(t *testing.T) {
 			}
 			delete(current, name)
 			encoded, _ := json.Marshal(object)
-			assignment, err := requestAssignment(string(encoded))
-			if optionalRequestField(expected, name, common.TransferConfidentialCircuitType) {
-				if err != nil {
-					t.Fatal("compatible optional field rejected", err)
-				}
-				full, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
-				if err != nil || !reflect.DeepEqual(full.Vector(), reference.Vector()) {
-					t.Fatal("optional field changed meaningful witness")
-				}
-			} else if err != errRequest && err != errUnsupported {
+			if _, err := requestAssignment(string(encoded)); err != errRequest && err != errUnsupported {
 				t.Fatal("missing required field was accepted")
 			}
 			tested++
@@ -578,16 +567,6 @@ func TestRequiredRequestFields(t *testing.T) {
 	}
 }
 
-func TestSchemaAliasesRemainStrict(t *testing.T) {
-	if !matchingWitnessNames([]string{"Private_Inputs_0_Utxo_RingDataHash"}, []string{"Private_Inputs_0_Utxo_ZoneDataHash"}) {
-		t.Fatal("pinned protocol rename is not accepted")
-	}
-	if matchingWitnessNames([]string{"Private_Inputs_0_Utxo_RingDataHash"}, []string{"Private_Inputs_1_Utxo_ZoneDataHash"}) ||
-		matchingWitnessNames([]string{"Amount", "Asset"}, []string{"Asset", "Amount"}) ||
-		matchingWitnessNames([]string{"Amount"}, []string{sentinel}) {
-		t.Fatal("unknown or reordered schema accepted")
-	}
-}
 func TestMergeFixture(t *testing.T) {
 	assignment := buildWitness(t, true)
 	asInteger := func(value frontend.Variable) *big.Int { return value.(*big.Int) }
@@ -608,7 +587,13 @@ func TestMergeFixture(t *testing.T) {
 		PrivateTxHash:       asInteger(assignment.PrivateTxHash),
 		PublicInputHash:     asInteger(assignment.PublicInputHash),
 		AllowDummyInputs:    asInteger(assignment.AllowDummyInputs),
+		OutputTreeID:        asInteger(assignment.OutputTreeID),
 		Output:              mergeprover.OutputParams{RingDataHash: asInteger(assignment.Output.RingDataHash), Hash: asInteger(assignment.OutputHash)},
+	}
+	for _, slot := range assignment.TreeSlots {
+		params.TreeSlots = append(params.TreeSlots, common.TreeSlotParams{
+			ID: asInteger(slot.ID), UtxoRoot: asInteger(slot.UtxoRoot), NullifierRoot: asInteger(slot.NullifierRoot),
+		})
 	}
 	for index, input := range assignment.Inputs {
 		params.Inputs = append(params.Inputs, mergeprover.InputParams{
@@ -616,8 +601,8 @@ func TestMergeFixture(t *testing.T) {
 			RingDataHash: asInteger(input.RingDataHash), StatePathElements: asIntegers(input.StatePathElements),
 			StatePathIndex: asInteger(input.StatePathIndex), NullifierLowValue: asInteger(input.NullifierLowValue),
 			NullifierNextValue: asInteger(input.NullifierNextValue), NullifierLowPathElements: asIntegers(input.NullifierLowPathElements),
-			NullifierLowPathIndex: asInteger(input.NullifierLowPathIndex), UtxoTreeRoot: asInteger(assignment.UtxoTreeRoots[index]),
-			NullifierTreeRoot: asInteger(assignment.NullifierTreeRoots[index]), Nullifier: asInteger(assignment.Nullifiers[index]),
+			NullifierLowPathIndex: asInteger(input.NullifierLowPathIndex), TreeSlot: asInteger(input.TreeSlot),
+			Nullifier: asInteger(assignment.Nullifiers[index]),
 		})
 	}
 	encoded, err := json.Marshal(&params)

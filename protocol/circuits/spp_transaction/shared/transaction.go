@@ -34,7 +34,7 @@ import (
 // Transaction is the transaction every variant proves, over one variant's
 // already-allocated witness. It runs no signer, ring, or owner-tag check: the
 // variant asserts those and resolves who signed, then hands the results to
-// Constrain. What is left is shared by all five variants.
+// Constrain. What is left is shared by all four variants.
 //
 // It is deliberately not a gnark circuit struct: the witness schema stays the
 // per-variant Public/Private structs, whose field paths are the keys the host
@@ -42,13 +42,20 @@ import (
 type Transaction struct {
 	Shape Shape
 
-	Nullifiers         []frontend.Variable
-	OutputHashes       []frontend.Variable
-	UtxoTreeRoots      []frontend.Variable
-	NullifierTreeRoots []frontend.Variable
+	Nullifiers   []frontend.Variable
+	OutputHashes []frontend.Variable
+	// InputTrees tree slots inputs may be spent from. An input picks its slot
+	// privately (Input.TreeSlot).
+	TreeSlots []TreeSlot
+	// Raw u16 id of the tree every output is appended to.
+	OutputTreeID frontend.Variable
 
 	Inputs  []Input
 	Outputs []UtxoCircuitFields
+	// BlindingSeed is the transaction's private random root seed. The output
+	// blinding seed, each output blinding, and the private tx blinding derive
+	// from it and the first nullifier (derivation.go).
+	BlindingSeed frontend.Variable
 
 	PrivateTxHash     frontend.Variable
 	ExternalDataHash  frontend.Variable
@@ -56,8 +63,11 @@ type Transaction struct {
 	PublicAmounts     [NPublicSlots]frontend.Variable
 	RingProgramID     frontend.Variable
 	SignerPkHashChain frontend.Variable
-	AllowDummyInputs  frontend.Variable
-	PublicInputHash   frontend.Variable
+	// InputFlags packs the dummy-input policy in bit 0 and input i's tree index
+	// in the TreeIndexBits bits starting at 1+TreeIndexBits*i, so the published
+	// routing costs no extra public-input-hash element.
+	InputFlags      frontend.Variable
+	PublicInputHash frontend.Variable
 
 	// PreimageAfterPrivateTxHash contains variant-specific fields inserted
 	// immediately after PrivateTxHash in the public-input-hash preimage.
@@ -94,8 +104,7 @@ func (t Transaction) ValidateLayout(extra ...LengthCheck) error {
 	checks := []LengthCheck{
 		{"nullifier", len(t.Nullifiers), t.Shape.NInputs},
 		{"output hash", len(t.OutputHashes), t.Shape.NOutputs},
-		{"utxo tree root", len(t.UtxoTreeRoots), t.Shape.NInputs},
-		{"nullifier tree root", len(t.NullifierTreeRoots), t.Shape.NInputs},
+		{"tree slot", len(t.TreeSlots), InputTrees},
 		{"output", len(t.Outputs), t.Shape.NOutputs},
 	}
 	for _, check := range append(checks, extra...) {
@@ -113,29 +122,47 @@ func (t Transaction) Constrain(api frontend.API, signers Signers, outputSigned [
 	if err := ValidateLength("output signed", len(outputSigned), t.Shape.NOutputs); err != nil {
 		return err
 	}
-	api.AssertIsBoolean(t.AllowDummyInputs)
+	// ToBinary over the shape's exact packed width both decomposes InputFlags
+	// and range-checks it, so no bit above the layout can carry a value.
+	flagBits := api.ToBinary(t.InputFlags, 1+TreeIndexBits*t.Shape.NInputs)
+	allowDummyInputs := flagBits[0]
 	// 1. check inputs
 	inputHashes := make([]frontend.Variable, t.Shape.NInputs)
-	addressHashes := make([]frontend.Variable, t.Shape.NInputs)
+	addressNullifiers := make([]frontend.Variable, t.Shape.NInputs)
 	for i, in := range t.Inputs {
+		// The dummy policy is SPP's nullifier-capacity gate: a spend consumes a
+		// nullifier leaf for a UTXO leaf that already exists, while dummy and
+		// address slots insert a nullifier without spending one. When the gate is
+		// off, every input slot must therefore be a real UTXO.
 		api.AssertIsEqual(
-			api.Mul(api.Sub(1, t.AllowDummyInputs), in.isDummy(api)),
+			api.Mul(api.Sub(1, allowDummyInputs), api.Sub(1, in.isUtxo(api))),
 			0,
 		)
+		// The slot an input spends from is private, but the program routes its
+		// nullifier by the published index. Binding the two here is what stops a
+		// proof checked against one tree from being queued into another.
+		api.AssertIsEqual(
+			in.TreeSlot,
+			api.FromBinary(flagBits[1+TreeIndexBits*i:1+TreeIndexBits*(i+1)]...),
+		)
 		signals := PublicInputUtxoInputs{
-			Nullifier:         t.Nullifiers[i],
-			UtxoTreeRoot:      t.UtxoTreeRoots[i],
-			NullifierTreeRoot: t.NullifierTreeRoots[i],
-			SignerPk:          signers[i],
+			Nullifier: t.Nullifiers[i],
+			SignerPk:  signers[i],
+			Tree:      SelectTreeSlot(api, in.TreeSlot, t.TreeSlots),
 		}
-		inputHashes[i], addressHashes[i] = constrainInput(api, in, signals)
+		inputHashes[i], addressNullifiers[i] = constrainInput(api, in, signals)
 	}
 	AssertDistinctNullifiers(api, t.Nullifiers)
 
 	// 2. check outputs
+	outputBlindingSeed := DeriveOutputBlindingSeed(api, t.Nullifiers[0], t.BlindingSeed)
 	outputHashes := make([]frontend.Variable, t.Shape.NOutputs)
 	for i, utxo := range t.Outputs {
-		outputHashes[i] = ConstrainOutput(api, utxo, t.OutputHashes[i], outputSigned[i])
+		api.AssertIsEqual(
+			utxo.Blinding,
+			DeriveOutputBlinding(api, t.Nullifiers[0], outputBlindingSeed, i),
+		)
+		outputHashes[i] = ConstrainOutput(api, utxo, t.OutputHashes[i], outputSigned[i], t.OutputTreeID)
 	}
 
 	// 3. check balance
@@ -152,8 +179,9 @@ func (t Transaction) Constrain(api frontend.API, signers Signers, outputSigned [
 		api,
 		inputHashes,
 		outputHashes,
-		addressHashes,
+		addressNullifiers,
 		t.ExternalDataHash,
+		DerivePrivateTxBlinding(api, t.Nullifiers[0], t.BlindingSeed),
 	)
 	api.AssertIsEqual(privateTxHash, t.PrivateTxHash)
 
@@ -164,18 +192,18 @@ func (t Transaction) Constrain(api frontend.API, signers Signers, outputSigned [
 
 func (t Transaction) publicInputHash(api frontend.API) frontend.Variable {
 	fields := []frontend.Variable{
-		gadget.HashChain(api, t.Nullifiers),
-		gadget.HashChain(api, t.OutputHashes),
-		gadget.HashChain(api, t.UtxoTreeRoots),
-		gadget.HashChain(api, t.NullifierTreeRoots),
+		gadget.HashChain4(api, t.Nullifiers),
+		gadget.HashChain4(api, t.OutputHashes),
+		TreeSlotsHashChain(api, t.TreeSlots),
+		t.OutputTreeID,
 		t.PrivateTxHash,
 	}
 	fields = append(fields, t.PreimageAfterPrivateTxHash...)
 	fields = append(fields, t.ExternalDataHash)
 	fields = append(fields, publicSlots(t.PublicAssets, t.PublicAmounts)...)
-	fields = append(fields, t.RingProgramID, t.SignerPkHashChain, t.AllowDummyInputs)
+	fields = append(fields, t.RingProgramID, t.SignerPkHashChain, t.InputFlags)
 	fields = append(fields, t.PreimageTail...)
-	return gadget.HashChain(api, fields)
+	return gadget.HashChain4(api, fields)
 }
 
 // Shape identifies one fixed-size SPP transaction circuit by its input and
@@ -196,6 +224,20 @@ func (s Shape) Validate() error {
 		return fmt.Errorf("spp: NOutputs must be >= 1, got %d", s.NOutputs)
 	}
 	return nil
+}
+
+// OwnerSignerSlots is the number of owner signers a transaction with nInputs
+// inputs can carry: at most one per input, bounded by the addresses a v1
+// transaction has left after the fixed transact accounts and one nullifier PDA
+// per input.
+func OwnerSignerSlots(nInputs int) int {
+	return min(nInputs, MaxTransactionAddresses-FixedTransactAddresses-nInputs)
+}
+
+// SignerWidth is the public signer vector length on the signature-requiring
+// rails: the payer plus OwnerSignerSlots. The ring authority rail uses 1.
+func (s Shape) SignerWidth() int {
+	return OwnerSignerSlots(s.NInputs) + 1
 }
 
 // publicSlots returns the public movement slots interleaved as
@@ -225,6 +267,16 @@ const (
 	// NPublicSlots is the number of distinct public assets whose aggregate
 	// movement can be proven in one transaction.
 	NPublicSlots = 3
+	// MaxTransactionAddresses is the address limit of a v1 Solana transaction.
+	MaxTransactionAddresses = 64
+	// FixedTransactAddresses is the number of transact accounts that are neither
+	// a nullifier PDA nor an owner signer: payer, tree, program, system program.
+	FixedTransactAddresses = 4
+	// InputTrees is the number of input tree slots a proof spends from.
+	InputTrees = 5
+	// TreeIndexBits is the width of one input's tree index inside InputFlags.
+	// It must hold every slot index, so 1<<TreeIndexBits >= InputTrees.
+	TreeIndexBits = 3
 	// DummyDomain is the domain tag for dummy (padding) utxos.
 	DummyDomain = 1
 	// AddressDomain is the domain tag for address utxos, separating address
@@ -237,6 +289,10 @@ const (
 	// NullifierTreeHeight is the SPP nullifier tree height.
 	NullifierTreeHeight = 40
 )
+
+// Compile-time bound on the InputFlags layout: a slot index that does not fit
+// in TreeIndexBits could not be published.
+const _ = uint((1 << TreeIndexBits) - InputTrees)
 
 // assertZeroWhen constrains v == 0 only when cond == 1 (see gadget.AssertZeroWhen).
 func assertZeroWhen(api frontend.API, cond, v frontend.Variable) {

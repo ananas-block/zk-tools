@@ -11,8 +11,8 @@ const NPublicSlots = 3
 var publicInputNames = [...]string{
 	"nullifiers",
 	"output_utxo_hashes",
-	"utxo_tree_roots",
-	"nullifier_tree_roots",
+	"tree_slots",
+	"output_tree_id",
 	"private_tx_hash",
 	"external_data_hash",
 	"public_asset_0",
@@ -23,11 +23,13 @@ var publicInputNames = [...]string{
 	"public_amount_2",
 	"ring_program_id",
 	"signer_pk_hashes",
-	"allow_dummy_inputs",
+	"input_flags",
 	"output_owner_pk_hashes",
 }
 
-// PublicInputNames returns the PublicInputHash preimage order.
+// PublicInputNames returns the PublicInputHash preimage order. Variant-specific
+// elements inserted after private_tx_hash (PreimageAfterPrivateTxHash) are not
+// listed; they exist only on the P256 rail.
 func PublicInputNames() []string {
 	out := make([]string, len(publicInputNames))
 	copy(out, publicInputNames[:])
@@ -35,17 +37,27 @@ func PublicInputNames() []string {
 }
 
 type PublicInputs struct {
-	Nullifiers         []*big.Int
-	OutputUtxoHashes   []*big.Int
-	UtxoTreeRoots      []*big.Int
-	NullifierTreeRoots []*big.Int
-	PrivateTxHash      *big.Int
-	ExternalDataHash   *big.Int
-	PublicAssets       [NPublicSlots]*big.Int
-	PublicAmounts      [NPublicSlots]*big.Int
-	RingProgramID      *big.Int
-	SignerPkHashes     []*big.Int
-	AllowDummyInputs   *big.Int
+	Nullifiers       []*big.Int
+	OutputUtxoHashes []*big.Int
+	// TreeSlots are the InputTrees slots inputs spend from, unused slots all
+	// zero at the end. They enter the preimage as one element, the tree slot
+	// chain.
+	TreeSlots []TreeSlot
+	// OutputTreeID is the raw u16 id of the tree every output is appended to.
+	OutputTreeID  *big.Int
+	PrivateTxHash *big.Int
+	// PreimageAfterPrivateTxHash holds the variant-specific elements inserted
+	// right after PrivateTxHash: nil for the EdDSA rails, the P256 message hash
+	// and the default P256 owner identity for the P256 rail.
+	PreimageAfterPrivateTxHash []*big.Int
+	ExternalDataHash           *big.Int
+	PublicAssets               [NPublicSlots]*big.Int
+	PublicAmounts              [NPublicSlots]*big.Int
+	RingProgramID              *big.Int
+	SignerPkHashes             []*big.Int
+	// InputFlags packs the dummy-input policy in bit 0 and every input's tree
+	// index in its own TreeIndexBits field; common.PackInputFlags builds it.
+	InputFlags *big.Int
 
 	// BindOutputOwnerTags appends the output-owner chain for owner-signed rails.
 	// Custom-ring values are masked to zero for anonymous outputs.
@@ -53,31 +65,38 @@ type PublicInputs struct {
 	OutputOwnerPkHashes []*big.Int
 }
 
+// PublicInputHash mirrors Transaction.publicInputHash in the circuit.
 func PublicInputHash(inputs PublicInputs) (*big.Int, error) {
-	nullifierChain, err := HashChain(inputs.Nullifiers)
+	if len(inputs.TreeSlots) != InputTrees {
+		return nil, fmt.Errorf(
+			"spp: public input hash tree slot count: got %d want %d",
+			len(inputs.TreeSlots), InputTrees,
+		)
+	}
+	if inputs.OutputTreeID == nil {
+		return nil, fmt.Errorf("spp: public input hash: output tree id is required")
+	}
+	nullifierChain, err := HashChain4(inputs.Nullifiers)
 	if err != nil {
 		return nil, fmt.Errorf("spp: public input hash nullifier chain: %w", err)
 	}
-	outputChain, err := HashChain(inputs.OutputUtxoHashes)
+	outputChain, err := HashChain4(inputs.OutputUtxoHashes)
 	if err != nil {
 		return nil, fmt.Errorf("spp: public input hash output chain: %w", err)
 	}
-	utxoRootChain, err := HashChain(inputs.UtxoTreeRoots)
+	treeSlotChain, err := TreeSlotsHashChain(inputs.TreeSlots)
 	if err != nil {
-		return nil, fmt.Errorf("spp: public input hash UTXO root chain: %w", err)
-	}
-	nullifierTreeRootChain, err := HashChain(inputs.NullifierTreeRoots)
-	if err != nil {
-		return nil, fmt.Errorf("spp: public input hash nullifier root chain: %w", err)
+		return nil, fmt.Errorf("spp: public input hash tree slot chain: %w", err)
 	}
 	fields := []*big.Int{
 		nullifierChain,
 		outputChain,
-		utxoRootChain,
-		nullifierTreeRootChain,
+		treeSlotChain,
+		inputs.OutputTreeID,
 		inputs.PrivateTxHash,
-		inputs.ExternalDataHash,
 	}
+	fields = append(fields, inputs.PreimageAfterPrivateTxHash...)
+	fields = append(fields, inputs.ExternalDataHash)
 	for i := 0; i < NPublicSlots; i++ {
 		fields = append(fields, inputs.PublicAssets[i], inputs.PublicAmounts[i])
 	}
@@ -90,14 +109,14 @@ func PublicInputHash(inputs PublicInputs) (*big.Int, error) {
 	fields = append(fields,
 		inputs.RingProgramID,
 		solanaOwnerChain,
-		inputs.AllowDummyInputs,
+		inputs.InputFlags,
 	)
 	if inputs.BindOutputOwnerTags {
-		outputOwnerChain, err := HashChain(inputs.OutputOwnerPkHashes)
+		outputOwnerChain, err := HashChain4(inputs.OutputOwnerPkHashes)
 		if err != nil {
 			return nil, fmt.Errorf("spp: public input hash output owner chain: %w", err)
 		}
 		fields = append(fields, outputOwnerChain)
 	}
-	return HashChain(fields)
+	return HashChain4(fields)
 }

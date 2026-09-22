@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/big"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -23,24 +24,7 @@ type requestParameters interface {
 	CreateWitness() (frontend.Circuit, error)
 }
 
-func optionalRequestField(expected reflect.Type, name string, rail common.CircuitType) bool {
-	switch expected {
-	case reflect.TypeOf(transfer.TransferParametersJSON{}):
-		return (name == "ringProgramId" && rail == common.TransferConfidentialCircuitType) ||
-			(name == "publishedOutputOwnerPkHashes" && rail == common.TransferRingAuthorityCircuitType)
-	case reflect.TypeOf(transfer.InputParamsJSON{}):
-		return name == "isDummy"
-	case reflect.TypeOf(transfer.OutputParamsJSON{}):
-		return name == "isDummy" ||
-			(name == "ownerPkHash" && rail == common.TransferConfidentialCircuitType) ||
-			((name == "ownerPkHash" || name == "nullifierPk") && rail == common.TransferRingAuthorityCircuitType)
-	case reflect.TypeOf(merge.MergeParametersJSON{}):
-		return (name == "ringProgramId" || name == "outputRingDataHash") && rail == common.MergeCircuitType
-	}
-	return false
-}
-
-func validateJSONShape(decoder *json.Decoder, expected reflect.Type, depth int, rail common.CircuitType) error {
+func validateJSONShape(decoder *json.Decoder, expected reflect.Type, depth int) error {
 	if depth > 32 {
 		return errRequest
 	}
@@ -70,24 +54,22 @@ func validateJSONShape(decoder *json.Decoder, expected reflect.Type, depth int, 
 				return errRequest
 			}
 			seen[name] = true
-			if err := validateJSONShape(decoder, field, depth+1, rail); err != nil {
+			if err := validateJSONShape(decoder, field, depth+1); err != nil {
 				return err
 			}
 		}
 		if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
 			return errRequest
 		}
-		for name := range fields {
-			if !seen[name] && !optionalRequestField(expected, name, rail) {
-				return errRequest
-			}
+		if len(seen) != len(fields) {
+			return errRequest
 		}
 	case reflect.Slice:
 		if token != json.Delim('[') {
 			return errRequest
 		}
 		for decoder.More() {
-			if err := validateJSONShape(decoder, expected.Elem(), depth+1, rail); err != nil {
+			if err := validateJSONShape(decoder, expected.Elem(), depth+1); err != nil {
 				return err
 			}
 		}
@@ -113,10 +95,10 @@ func validateJSONShape(decoder *json.Decoder, expected reflect.Type, depth int, 
 	return nil
 }
 
-func decodeRequest(input string, target any, rail common.CircuitType) error {
+func decodeRequest(input string, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(input))
 	decoder.UseNumber()
-	if err := validateJSONShape(decoder, reflect.TypeOf(target).Elem(), 0, rail); err != nil {
+	if err := validateJSONShape(decoder, reflect.TypeOf(target).Elem(), 0); err != nil {
 		return errRequest
 	}
 	if _, err := decoder.Token(); err != io.EOF {
@@ -169,7 +151,7 @@ func requestAssignment(input string) (frontend.Circuit, error) {
 	switch envelope.CircuitType {
 	case common.TransferConfidentialCircuitType, common.TransferRingCircuitType, common.TransferRingAuthorityCircuitType:
 		var encoded transfer.TransferParametersJSON
-		if err := decodeRequest(input, &encoded, envelope.CircuitType); err != nil {
+		if err := decodeRequest(input, &encoded); err != nil {
 			return nil, err
 		}
 		assignment := new(transfer.TransferParameters)
@@ -179,7 +161,7 @@ func requestAssignment(input string) (frontend.Circuit, error) {
 		params = assignment
 	case common.MergeCircuitType, common.MergeRingCircuitType:
 		var encoded merge.MergeParametersJSON
-		if err := decodeRequest(input, &encoded, envelope.CircuitType); err != nil {
+		if err := decodeRequest(input, &encoded); err != nil {
 			return nil, err
 		}
 		assignment := new(merge.MergeParameters)
@@ -235,7 +217,7 @@ func buildRequestWitness(input string, circuit *csbn254.R1CS) (witness.Witness, 
 	if err != nil {
 		return nil, err
 	}
-	if !matchingWitnessNames(publicNames, expectedPublic) || !matchingWitnessNames(secretNames, expectedSecret) {
+	if !slices.Equal(publicNames, expectedPublic) || !slices.Equal(secretNames, expectedSecret) {
 		return nil, errShape
 	}
 	full, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
@@ -243,29 +225,6 @@ func buildRequestWitness(input string, circuit *csbn254.R1CS) (witness.Witness, 
 		return nil, errRequest
 	}
 	return full, nil
-}
-
-func matchingWitnessNames(assignment, circuit []string) bool {
-	if len(assignment) != len(circuit) {
-		return false
-	}
-	for index, name := range circuit {
-		parts := strings.Split(name, "_")
-		for index, part := range parts {
-			switch part {
-			case "ZoneDataHash":
-				parts[index] = "RingDataHash"
-			case "ZoneProgramID":
-				parts[index] = "RingProgramID"
-			case "OutputZoneDataHash":
-				parts[index] = "OutputRingDataHash"
-			}
-		}
-		if assignment[index] != strings.Join(parts, "_") {
-			return false
-		}
-	}
-	return true
 }
 
 func circuitShape(circuit *csbn254.R1CS) (uint32, uint32, bool) {
