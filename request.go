@@ -24,6 +24,20 @@ type requestParameters interface {
 	CreateWitness() (frontend.Circuit, error)
 }
 
+// jsonFields maps each JSON key of a struct to its type, promoting the fields
+// of an untagged embedded struct as encoding/json does.
+func jsonFields(expected reflect.Type, fields map[string]reflect.Type) {
+	for index := 0; index < expected.NumField(); index++ {
+		field := expected.Field(index)
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if field.Anonymous && name == "" && field.Type.Kind() == reflect.Struct {
+			jsonFields(field.Type, fields)
+			continue
+		}
+		fields[name] = field.Type
+	}
+}
+
 func validateJSONShape(decoder *json.Decoder, expected reflect.Type, depth int) error {
 	if depth > 32 {
 		return errRequest
@@ -38,10 +52,7 @@ func validateJSONShape(decoder *json.Decoder, expected reflect.Type, depth int) 
 			return errRequest
 		}
 		fields := make(map[string]reflect.Type, expected.NumField())
-		for index := 0; index < expected.NumField(); index++ {
-			field := expected.Field(index)
-			fields[strings.Split(field.Tag.Get("json"), ",")[0]] = field.Type
-		}
+		jsonFields(expected, fields)
 		seen := make(map[string]bool, len(fields))
 		for decoder.More() {
 			token, err := decoder.Token()
