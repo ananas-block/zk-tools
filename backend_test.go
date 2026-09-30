@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -614,5 +615,100 @@ func TestMergeFixture(t *testing.T) {
 	compareWitnesses(t, system, string(encoded), assignment, "")
 	if !testing.Short() {
 		proveFixture(t, system, string(encoded), 8, 1)
+	}
+}
+
+func writeKeyFile(t *testing.T, path string, header [3]uint32, prover *preparedProver, trailer []byte) {
+	t.Helper()
+	var container bytes.Buffer
+	for _, field := range header {
+		_ = binary.Write(&container, binary.BigEndian, field)
+	}
+	for _, section := range []io.WriterTo{prover.pk, prover.vk, prover.cs} {
+		if _, err := section.WriteTo(&container); err != nil {
+			t.Fatal(err)
+		}
+	}
+	container.Write(trailer)
+	if err := os.WriteFile(path, container.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKeyFileContainer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("groth16 setup of the transfer fixture circuit")
+	}
+	request := fixtureRequest(t)
+	assignment, err := requestAssignment(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	system := compileCircuit(t, assignment)
+	pk, vk, err := groth16.Setup(system)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prover := &preparedProver{cs: system, pk: pk.(*native.ProvingKey), vk: vk.(*native.VerifyingKey)}
+	path := filepath.Join(t.TempDir(), "transfer_confidential_2_3.key")
+
+	writeKeyFile(t, path, [3]uint32{2, 3, 0}, prover, nil)
+	handle, err := loadPreparedKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := provePrepared(handle, request, true)
+	if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 3 {
+		t.Fatal("container proof failed", err)
+	}
+	if valid, err := verifyPrepared(handle, result.proof, result.publicInputs); err != nil || !valid {
+		t.Fatal("container proof did not verify")
+	}
+	releasePrepared(handle)
+
+	for name, tamper := range map[string]struct {
+		header  [3]uint32
+		trailer []byte
+	}{
+		"p256 rail":     {[3]uint32{2, 3, 1}, nil},
+		"header shape":  {[3]uint32{1, 3, 0}, nil},
+		"trailing byte": {[3]uint32{2, 3, 0}, []byte{0}},
+	} {
+		writeKeyFile(t, path, tamper.header, prover, tamper.trailer)
+		if _, err := loadPreparedKey(path); err != errKey {
+			t.Fatalf("%s: container accepted", name)
+		}
+	}
+	valid, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, valid[:len(valid)/2], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadPreparedKey(path); err != errKey {
+		t.Fatal("truncated container accepted")
+	}
+	if len(prepared) != 0 {
+		t.Fatal("rejected containers leaked a handle")
+	}
+}
+
+func TestStagedKeyFile(t *testing.T) {
+	path := os.Getenv("ZOLANA_TEST_KEY_FILE")
+	if path == "" {
+		t.Skip("set ZOLANA_TEST_KEY_FILE to a pinned transfer_confidential_2_3.key")
+	}
+	handle, err := loadPreparedKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releasePrepared(handle)
+	result, err := provePrepared(handle, fixtureRequest(t), true)
+	if err != nil || result.inputs != 2 || result.outputs != 3 {
+		t.Fatal("staged key file proof failed", err)
+	}
+	if valid, err := verifyPrepared(handle, result.proof, result.publicInputs); err != nil || !valid {
+		t.Fatal("staged key file proof did not verify")
 	}
 }

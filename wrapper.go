@@ -107,6 +107,23 @@ func gnark_prepared_load(r1csPath, pkPath, vkPath *C.char) (output *C.C_Prepared
 	return output
 }
 
+//export gnark_prepared_load_key
+func gnark_prepared_load_key(keyPath *C.char) (output *C.C_PreparedResult) {
+	output = (*C.C_PreparedResult)(C.calloc(1, C.size_t(unsafe.Sizeof(C.C_PreparedResult{}))))
+	if output == nil {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			output.error = cError(errBackend)
+		}
+	}()
+	handle, err := loadPreparedKey(C.GoString(keyPath))
+	output.handle = C.uint64_t(handle)
+	output.error = cError(err)
+	return output
+}
+
 //export gnark_prepared_prove
 func gnark_prepared_prove(handle C.uint64_t, input *C.char) (output *C.C_Groth16ProofResult) {
 	defer recoverProof(&output)

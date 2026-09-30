@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -215,21 +216,84 @@ func (prover *preparedProver) validateKeys() error {
 	return nil
 }
 
-func loadPrepared(r1csPath, pkPath, vkPath string) (uint64, error) {
+// readKeyFile loads a Zolana `.key` container: nInputs, nOutputs and
+// requiresP256 as big-endian u32s, then the proving key, verifying key and
+// constraint system. The constraint system comes last, so the proving key
+// cannot be checked against its domain before it is read; the caller must
+// verify the file against the pinned proving-key lockfile before loading it.
+func readKeyFile(path string) (*preparedProver, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errKey
+	}
+	defer file.Close()
+	var header [12]byte
+	if _, err := io.ReadFull(file, header[:]); err != nil {
+		return nil, errKey
+	}
+	inputs := binary.BigEndian.Uint32(header[0:4])
+	outputs := binary.BigEndian.Uint32(header[4:8])
+	// Only the Solana-only (eddsa) rails are proved on device.
+	if binary.BigEndian.Uint32(header[8:12]) != 0 {
+		return nil, errKey
+	}
+	prover := &preparedProver{
+		cs: groth16.NewCS(ecc.BN254).(*csbn254.R1CS),
+		pk: groth16.NewProvingKey(ecc.BN254).(*native.ProvingKey),
+		vk: groth16.NewVerifyingKey(ecc.BN254).(*native.VerifyingKey),
+	}
+	for _, section := range []io.ReaderFrom{prover.pk, prover.vk, prover.cs} {
+		if _, err := section.ReadFrom(file); err != nil {
+			return nil, errKey
+		}
+	}
+	var extra [1]byte
+	if count, err := file.Read(extra[:]); count != 0 || err != io.EOF {
+		return nil, errKey
+	}
+	if _, _, err := witnessNames(prover.cs); err != nil {
+		return nil, errKey
+	}
+	if err := prover.validateKeys(); err != nil {
+		return nil, err
+	}
+	if shapeInputs, shapeOutputs, known := circuitShape(prover.cs); !known ||
+		shapeInputs != inputs || shapeOutputs != outputs {
+		return nil, errKey
+	}
+	return prover, nil
+}
+
+func register(read func() (*preparedProver, error)) (uint64, error) {
 	return backendCall(func() (uint64, error) {
 		if len(prepared) >= maxPrepared || nextHandle == ^uint64(0) {
 			return 0, errCapacity
 		}
-		if r1csPath == "" || pkPath == "" || vkPath == "" {
-			return 0, errKey
-		}
-		prover, err := readSystem(r1csPath, pkPath, vkPath)
+		prover, err := read()
 		if err != nil {
 			return 0, err
 		}
 		nextHandle++
 		prepared[nextHandle] = prover
 		return nextHandle, nil
+	})
+}
+
+func loadPrepared(r1csPath, pkPath, vkPath string) (uint64, error) {
+	return register(func() (*preparedProver, error) {
+		if r1csPath == "" || pkPath == "" || vkPath == "" {
+			return nil, errKey
+		}
+		return readSystem(r1csPath, pkPath, vkPath)
+	})
+}
+
+func loadPreparedKey(path string) (uint64, error) {
+	return register(func() (*preparedProver, error) {
+		if path == "" {
+			return nil, errKey
+		}
+		return readKeyFile(path)
 	})
 }
 
