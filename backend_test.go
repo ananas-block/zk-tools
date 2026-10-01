@@ -18,6 +18,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark/backend/groth16"
 	native "github.com/consensys/gnark/backend/groth16/bn254"
+	"github.com/consensys/gnark/backend/witness"
 	csbn254 "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -29,7 +30,6 @@ import (
 )
 
 const sentinel = "PRIVATE_SENTINEL_894713"
-const validSquare = "{\"Secret\":\"3\",\"Public\":\"9\"}"
 
 type squareCircuit struct {
 	Secret frontend.Variable
@@ -65,6 +65,13 @@ func squareSystem(t *testing.T) *preparedProver {
 	return prover
 }
 
+// square builds the squareCircuit witness for secret and public.
+func square(secret, public int) func(*csbn254.R1CS) (witness.Witness, error) {
+	return func(*csbn254.R1CS) (witness.Witness, error) {
+		return frontend.NewWitness(&squareCircuit{Secret: secret, Public: public}, ecc.BN254.ScalarField())
+	}
+}
+
 func writeSystem(t *testing.T, prover *preparedProver) [3]string {
 	t.Helper()
 	dir := t.TempDir()
@@ -84,51 +91,15 @@ func writeSystem(t *testing.T, prover *preparedProver) [3]string {
 	return paths
 }
 
-func TestStrictFlattenedWitness(t *testing.T) {
-	system := compileCircuit(t, &squareCircuit{})
-	modulus := ecc.BN254.ScalarField().String()
-	cases := []string{
-		"null", "[]", "{}", "", validSquare + "{}",
-		"{\"Secret\":3.9,\"Public\":\"9\"}",
-		"{\"Secret\":3,\"Public\":\"9\"}",
-		"{\"Secret\":3e0,\"Public\":\"9\"}",
-		"{\"Secret\":null,\"Public\":\"9\"}",
-		"{\"Secret\":true,\"Public\":\"9\"}",
-		"{\"Secret\":[],\"Public\":\"9\"}",
-		"{\"Secret\":{},\"Public\":\"9\"}",
-		"{\"Secret\":\"3\",\"Secret\":\"3\",\"Public\":\"9\"}",
-		"{\"Secret\":\"3\",\"\\u0053ecret\":\"3\",\"Public\":\"9\"}",
-		"{\"Secret\":\"3\",\"Public\":\"9\",\"" + sentinel + "\":\"3\"}",
-		"{\"Public\":\"9\"}",
-		"{\"Secret\":\"3\"}",
-		"{\"secret\":\"3\",\"Public\":\"9\"}",
-	}
-	for _, value := range []string{"3.9", "-1", "-0", "+3", "03", " 3", "3 ", "3e0", "0x3", "", modulus, sentinel, "٣", strings.Repeat("9", 500)} {
-		encoded, _ := json.Marshal(value)
-		cases = append(cases, "{\"Secret\":"+string(encoded)+",\"Public\":\"9\"}")
-	}
-	for index, input := range cases {
-		_, err := buildWitnessFromJSON(input, system)
-		if err != errWitness {
-			t.Fatalf("case %d: expected fixed witness error", index)
-		}
-		if strings.Contains(err.Error(), sentinel) || strings.Contains(err.Error(), "3.9") {
-			t.Fatal("secret in error")
-		}
-	}
-	for _, secret := range []string{"0", "3", new(big.Int).Sub(ecc.BN254.ScalarField(), big.NewInt(1)).String()} {
-		if _, err := buildWitnessFromJSON("{\"Secret\":\""+secret+"\",\"Public\":\"9\"}", system); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func TestSensitiveErrorsAndLogging(t *testing.T) {
 	if logger.Logger().GetLevel() != zerolog.Disabled {
 		t.Fatal("gnark logger must be disabled at initialization")
 	}
-	prover := squareSystem(t)
-	paths := writeSystem(t, prover)
+	paths := writeSystem(t, squareSystem(t))
+	handle, err := loadPrepared(paths[0], paths[1], paths[2])
+	if err != nil {
+		t.Fatal(err)
+	}
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +107,8 @@ func TestSensitiveErrorsAndLogging(t *testing.T) {
 	oldOut, oldErr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = writer, writer
 	defer func() { os.Stdout, os.Stderr = oldOut, oldErr }()
-	result, proveErr := proveOnce(paths[0], paths[1], "{\"Secret\":\"894713987654321\",\"Public\":\"9\"}")
+	result, proveErr := proveWith(handle, square(894713987654321, 9))
+	releasePrepared(handle)
 	_ = writer.Close()
 	logged, readErr := io.ReadAll(reader)
 	_ = reader.Close()
@@ -161,7 +133,7 @@ func TestSensitiveErrorsAndLogging(t *testing.T) {
 	gnark_free_prepared_result(ffiResult)
 }
 
-func TestPreparedLifecycleAndCompatibility(t *testing.T) {
+func TestPreparedLifecycle(t *testing.T) {
 	prover := squareSystem(t)
 	paths := writeSystem(t, prover)
 	handle, err := loadPrepared(paths[0], paths[1], paths[2])
@@ -172,20 +144,13 @@ func TestPreparedLifecycleAndCompatibility(t *testing.T) {
 	if _, err := loadPrepared(paths[0], paths[1], paths[2]); err != errCapacity {
 		t.Fatal("handle capacity is not bounded")
 	}
-	legacy, err := proveOnce(paths[0], paths[1], validSquare)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if valid, err := verifyOnce(paths[0], paths[2], legacy.proof, legacy.publicInputs); err != nil || !valid {
-		t.Fatal("legacy proof did not verify")
-	}
 	for _, path := range paths {
 		if err := os.Remove(path); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for index := 0; index < 3; index++ {
-		result, err := provePrepared(handle, validSquare, false)
+		result, err := proveWith(handle, square(3, 9))
 		if err != nil {
 			t.Fatal("warm prove reopened an asset", err)
 		}
@@ -207,7 +172,7 @@ func TestPreparedLifecycleAndCompatibility(t *testing.T) {
 		if _, err := verifyPrepared(handle, result.proof+"00", result.publicInputs); err != errProof {
 			t.Fatal("trailing proof bytes accepted")
 		}
-		full, _ := buildWitnessFromJSON("{\"Secret\":\"3\",\"Public\":\"8\"}", prover.cs)
+		full, _ := square(3, 8)(prover.cs)
 		public, _ := full.Public()
 		binaryPublic, _ := public.MarshalBinary()
 		if valid, err := verifyPrepared(handle, result.proof, hex.EncodeToString(binaryPublic)); err != nil || valid {
@@ -216,7 +181,7 @@ func TestPreparedLifecycleAndCompatibility(t *testing.T) {
 	}
 	releasePrepared(handle)
 	releasePrepared(handle)
-	if _, err := provePrepared(handle, validSquare, false); err != errHandle {
+	if _, err := proveWith(handle, square(3, 9)); err != errHandle {
 		t.Fatal("released handle accepted")
 	}
 	if len(prepared) != 0 {
@@ -236,7 +201,7 @@ func TestConcurrentReleaseDoesNotRace(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			result, err := provePrepared(handle, validSquare, false)
+			result, err := proveWith(handle, square(3, 9))
 			if err == errHandle {
 				return
 			}
@@ -470,25 +435,8 @@ func TestStagedTransferKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	compareWitnesses(t, prepared[handle].cs, request, assignment, string(flattened))
-	legacy, err := proveOnce(prefix+".r1cs", prefix+".pk", string(flattened))
-	if err != nil {
-		t.Fatal("canonical staged legacy prove", err)
-	}
-	if valid, err := verifyOnce(prefix+".r1cs", prefix+".vk", legacy.proof, legacy.publicInputs); err != nil || !valid {
-		t.Fatal("canonical staged legacy verify", err)
-	}
-	stagedFlat, err := os.ReadFile(filepath.Join(dir, "witness-2x3.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := proveOnce(prefix+".r1cs", prefix+".pk", string(stagedFlat)); err != nil {
-		t.Fatal("staged legacy fixture rejected", err)
-	}
-	if !bytes.Equal(stagedFlat, flattened) {
-		t.Fatal("staged flattened fixture differs from canonical testdata")
-	}
 	for index := 0; index < 2; index++ {
-		result, err := provePrepared(handle, request, true)
+		result, err := provePrepared(handle, request)
 		if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 3 {
 			t.Fatal("staged structured proof failed", err)
 		}
@@ -657,7 +605,7 @@ func TestKeyFileContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := provePrepared(handle, request, true)
+	result, err := provePrepared(handle, request)
 	if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 3 {
 		t.Fatal("container proof failed", err)
 	}
@@ -704,7 +652,7 @@ func TestStagedKeyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer releasePrepared(handle)
-	result, err := provePrepared(handle, fixtureRequest(t), true)
+	result, err := provePrepared(handle, fixtureRequest(t))
 	if err != nil || result.inputs != 2 || result.outputs != 3 {
 		t.Fatal("staged key file proof failed", err)
 	}

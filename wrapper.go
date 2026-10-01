@@ -124,17 +124,10 @@ func gnark_prepared_load_key(keyPath *C.char) (output *C.C_PreparedResult) {
 	return output
 }
 
-//export gnark_prepared_prove
-func gnark_prepared_prove(handle C.uint64_t, input *C.char) (output *C.C_Groth16ProofResult) {
-	defer recoverProof(&output)
-	result, err := provePrepared(uint64(handle), C.GoString(input), false)
-	return exportProof(result, err)
-}
-
 //export gnark_prepared_prove_request
 func gnark_prepared_prove_request(handle C.uint64_t, input *C.char) (output *C.C_Groth16ProofResult) {
 	defer recoverProof(&output)
-	result, err := provePrepared(uint64(handle), C.GoString(input), true)
+	result, err := provePrepared(uint64(handle), C.GoString(input))
 	return exportProof(result, err)
 }
 
@@ -160,23 +153,6 @@ func gnark_free_prepared_result(result *C.C_PreparedResult) {
 		C.free(unsafe.Pointer(result.error))
 		C.free(unsafe.Pointer(result))
 	}
-}
-
-//export gnark_groth16_prove
-func gnark_groth16_prove(r1csPath, pkPath, input *C.char) (output *C.C_Groth16ProofResult) {
-	defer recoverProof(&output)
-	result, err := proveOnce(C.GoString(r1csPath), C.GoString(pkPath), C.GoString(input))
-	return exportProof(result, err)
-}
-
-//export gnark_groth16_verify
-func gnark_groth16_verify(r1csPath, vkPath, proof, publicInputs *C.char) (output *C.char) {
-	defer recoverError(&output)
-	valid, err := verifyOnce(C.GoString(r1csPath), C.GoString(vkPath), C.GoString(proof), C.GoString(publicInputs))
-	if err == nil && !valid {
-		err = errInvalidProof
-	}
-	return cError(err)
 }
 
 //export gnark_free_proof_result

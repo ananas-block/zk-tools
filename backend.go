@@ -103,17 +103,13 @@ func readSystem(r1csPath, pkPath, vkPath string) (*preparedProver, error) {
 	if _, _, err := witnessNames(prover.cs); err != nil {
 		return nil, errKey
 	}
-	if pkPath != "" {
-		prover.pk = groth16.NewProvingKey(ecc.BN254).(*native.ProvingKey)
-		if err := readProvingKey(pkPath, prover); err != nil {
-			return nil, err
-		}
+	prover.pk = groth16.NewProvingKey(ecc.BN254).(*native.ProvingKey)
+	if err := readProvingKey(pkPath, prover); err != nil {
+		return nil, err
 	}
-	if vkPath != "" {
-		prover.vk = groth16.NewVerifyingKey(ecc.BN254).(*native.VerifyingKey)
-		if err := readValidated(vkPath, prover.vk); err != nil {
-			return nil, err
-		}
+	prover.vk = groth16.NewVerifyingKey(ecc.BN254).(*native.VerifyingKey)
+	if err := readValidated(vkPath, prover.vk); err != nil {
+		return nil, err
 	}
 	if err := prover.validateKeys(); err != nil {
 		return nil, err
@@ -304,20 +300,24 @@ func releasePrepared(handle uint64) {
 	})
 }
 
-func provePrepared(handle uint64, input string, structured bool) (proofResult, error) {
+// provePrepared proves a structured Zolana /prove request with the prepared
+// prover handle.
+func provePrepared(handle uint64, request string) (proofResult, error) {
+	return proveWith(handle, func(cs *csbn254.R1CS) (witness.Witness, error) {
+		return buildRequestWitness(request, cs)
+	})
+}
+
+// proveWith proves with the prepared prover handle and the witness build
+// makes for its constraint system.
+func proveWith(handle uint64, build func(*csbn254.R1CS) (witness.Witness, error)) (proofResult, error) {
 	return backendCall(func() (proofResult, error) {
 		prover, ok := prepared[handle]
 		if !ok {
 			return proofResult{}, errHandle
 		}
-		var full witness.Witness
-		var err error
 		started := time.Now()
-		if structured {
-			full, err = buildRequestWitness(input, prover.cs)
-		} else {
-			full, err = buildWitnessFromJSON(input, prover.cs)
-		}
+		full, err := build(prover.cs)
 		if err != nil {
 			return proofResult{}, err
 		}
@@ -339,14 +339,11 @@ func (prover *preparedProver) prove(full witness.Witness) (proofResult, error) {
 	if err != nil {
 		return proofResult{}, errBackend
 	}
-	var verifyMS uint64
-	if prover.vk != nil {
-		started := time.Now()
-		if err := groth16.Verify(proof, prover.vk, public); err != nil {
-			return proofResult{}, errBackend
-		}
-		verifyMS = uint64(time.Since(started).Milliseconds())
+	started = time.Now()
+	if err := groth16.Verify(proof, prover.vk, public); err != nil {
+		return proofResult{}, errBackend
 	}
+	verifyMS := uint64(time.Since(started).Milliseconds())
 	var proofBytes bytes.Buffer
 	if _, err := proof.WriteTo(&proofBytes); err != nil {
 		return proofResult{}, errBackend
@@ -419,40 +416,6 @@ func verifyPrepared(handle uint64, proofHex, publicHex string) (bool, error) {
 		prover, ok := prepared[handle]
 		if !ok {
 			return false, errHandle
-		}
-		return prover.verify(proofHex, publicHex)
-	})
-}
-
-func proveOnce(r1csPath, pkPath, input string) (proofResult, error) {
-	return backendCall(func() (proofResult, error) {
-		if pkPath == "" {
-			return proofResult{}, errKey
-		}
-		prover, err := readSystem(r1csPath, pkPath, "")
-		if err != nil {
-			return proofResult{}, err
-		}
-		started := time.Now()
-		full, err := buildWitnessFromJSON(input, prover.cs)
-		if err != nil {
-			return proofResult{}, err
-		}
-		witnessMS := uint64(time.Since(started).Milliseconds())
-		result, err := prover.prove(full)
-		result.witnessMS = witnessMS
-		return result, err
-	})
-}
-
-func verifyOnce(r1csPath, vkPath, proofHex, publicHex string) (bool, error) {
-	return backendCall(func() (bool, error) {
-		if vkPath == "" {
-			return false, errKey
-		}
-		prover, err := readSystem(r1csPath, "", vkPath)
-		if err != nil {
-			return false, err
 		}
 		return prover.verify(proofHex, publicHex)
 	})
