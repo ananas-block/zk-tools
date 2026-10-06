@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"github.com/consensys/gnark-crypto/ecc"
@@ -82,12 +83,12 @@ func (k *referenceKernel) commitment(index int, knowledge bool, values []fr.Elem
 func TestZolanaMoproTransfer(t *testing.T) {
 	key, err := os.ReadFile("../../examples/browser/public/keys/transfer_confidential_2_3.key")
 	if os.IsNotExist(err) {
-		t.Skip("stage the local demo key and sample first")
+		t.Skip("stage the local demo key first")
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile("../../examples/browser/public/fixtures/transfer-2x3.json")
+	data, err := os.ReadFile("testdata/transfer-2x3.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +109,7 @@ func TestZolanaMoproTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 	kernel := &referenceKernel{pk: ps.ProvingKey.(*native.ProvingKey)}
-	c := &preparedCircuit{cs: ps.ConstraintSystem.(*cs.R1CS), pk: ps.ProvingKey, kernel: kernel}
+	c := &preparedCircuit{cs: ps.ConstraintSystem.(*cs.R1CS), pk: ps.ProvingKey, digest: sha256.Sum256(key), kernel: kernel}
 	kernel.fail = true
 	if _, err := c.prove(&params); err == nil {
 		t.Fatal("kernel error was ignored")
@@ -120,6 +121,9 @@ func TestZolanaMoproTransfer(t *testing.T) {
 	}
 	if err := groth16.Verify(proof.Proof, ps.VerifyingKey, public); err != nil {
 		t.Fatal(err)
+	}
+	if proof.ProvingKeySha256 != sha256.Sum256(key) {
+		t.Fatal("proof does not report its proving key digest")
 	}
 	if report := os.Getenv("MOPRO_BROWSER_PROOFS"); report != "" {
 		raw, err := os.ReadFile(report)

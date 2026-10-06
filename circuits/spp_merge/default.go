@@ -12,7 +12,7 @@ import (
 // Properties:
 // 1. Confidentiality - Input and output UTXO owner pubkeys are public inputs.
 // 2. Dummy public inputs are indistinguishable from UTXO public inputs.
-// 3. No signatures are enforced in the program or circuit.
+// 3. No owner signature is enforced; cache insertion requires its write authority to sign.
 // 4. Balances are preserved.
 // 5. Input and output utxos are owned by the same owner.
 // 6. 1/many UTXOs to one UTXO
@@ -25,13 +25,12 @@ type (
 )
 
 const (
-	MergeInputs = mergeshared.MergeInputs
 	UtxoDomain  = mergeshared.UtxoDomain
 	DummyDomain = mergeshared.DummyDomain
 )
 
 // Circuit is the default-ring merge rail. It publishes the owner's signing
-// pk_field in addition to the common merge public-input-hash preimage.
+// pk_field and nullifier public key in addition to the common preimage.
 type Circuit struct {
 	NumInputs int `gnark:"-"`
 
@@ -51,11 +50,13 @@ type Circuit struct {
 	PublicInputHash frontend.Variable `gnark:",public"`
 }
 
-func NewMergeCircuit() *Circuit {
+// NewMergeCircuit allocates the default-rail merge circuit for n input slots.
+// One proving system exists per supported count; Define rejects any other.
+func NewMergeCircuit(n int) *Circuit {
 	return &Circuit{
-		NumInputs:          MergeInputs,
-		Inputs:             mergeshared.NewInputs(),
-		CommonPublicInputs: mergeshared.NewCommonPublicInputs(),
+		NumInputs:          n,
+		Inputs:             mergeshared.NewInputs(n),
+		CommonPublicInputs: mergeshared.NewCommonPublicInputs(n),
 	}
 }
 
@@ -85,8 +86,8 @@ func (c *Circuit) Define(api frontend.API) error {
 	api.AssertIsEqual(c.UserSigningPkHash, c.OwnerPkHash)
 
 	fields := c.CommonPublicInputs.Prefix(api)
-	fields = append(fields, c.UserSigningPkHash)
-	api.AssertIsEqual(c.PublicInputHash, gadget.HashChain(api, fields))
+	fields = append(fields, c.UserSigningPkHash, c.UserNullifierPk)
+	api.AssertIsEqual(c.PublicInputHash, gadget.HashChain4(api, fields))
 	return nil
 }
 

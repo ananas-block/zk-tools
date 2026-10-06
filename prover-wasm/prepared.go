@@ -16,6 +16,7 @@ import (
 type preparedCircuit struct {
 	cs     *cs.R1CS
 	pk     groth16.ProvingKey
+	digest [32]byte
 	kernel proofKernel
 }
 
@@ -49,5 +50,5 @@ func (c *preparedCircuit) prove(params parameters) (*common.Proof, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &common.Proof{Proof: proof}, nil
+	return &common.Proof{Proof: proof, ProvingKeySha256: c.digest}, nil
 }

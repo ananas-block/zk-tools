@@ -24,9 +24,18 @@ type P256TransferParameters struct {
 
 	Inputs  []InputParams
 	Outputs []OutputParams
+	// TreeSlots are the shared.InputTrees public tree slots inputs may be spent
+	// from; unused slots are all zero. Each input names its own slot privately.
+	TreeSlots []common.TreeSlotParams
+	// OutputTreeID is the raw u16 id of the tree every output is appended to.
+	OutputTreeID *big.Int
 
 	ExternalDataHash *big.Int
 	PrivateTxHash    *big.Int
+	// BlindingSeed is the transaction's private random root seed; the circuit
+	// derives the output blinding seed, every output blinding, and the private
+	// tx blinding from it and the first nullifier.
+	BlindingSeed *big.Int
 
 	P256PubX               *big.Int
 	P256PubY               *big.Int
@@ -40,33 +49,40 @@ type P256TransferParameters struct {
 	PublicAmounts                []*big.Int
 	RingProgramID                *big.Int
 	SignerPkHashes               []*big.Int
-	AllowDummyInputs             *big.Int
+	InputFlags                   *big.Int
 	PublishedOutputOwnerPkHashes []*big.Int
-	PublicInputHash              *big.Int
+
+	Cache CacheSelectionParams
+
+	PublicInputHash *big.Int
 }
 
 type P256TransferParametersJSON struct {
-	CircuitType                  common.CircuitType `json:"circuitType"`
-	NInputs                      uint32             `json:"nInputs"`
-	NOutputs                     uint32             `json:"nOutputs"`
-	Inputs                       []InputParamsJSON  `json:"inputs"`
-	Outputs                      []OutputParamsJSON `json:"outputs"`
-	ExternalDataHash             string             `json:"externalDataHash"`
-	PrivateTxHash                string             `json:"privateTxHash"`
-	P256PubX                     string             `json:"p256PubX"`
-	P256PubY                     string             `json:"p256PubY"`
-	P256SigR                     string             `json:"p256SigR"`
-	P256SigS                     string             `json:"p256SigS"`
-	P256MessageHashLow           string             `json:"p256MessageHashLow"`
-	P256MessageHashHigh          string             `json:"p256MessageHashHigh"`
-	DefaultP256OwnerPkHash       string             `json:"defaultP256OwnerPkHash"`
-	PublicAssets                 []string           `json:"publicAssets"`
-	PublicAmounts                []string           `json:"publicAmounts"`
-	RingProgramID                string             `json:"ringProgramId"`
-	SignerPkHashes               []string           `json:"signerPkHashes"`
-	AllowDummyInputs             string             `json:"allowDummyInputs"`
-	PublishedOutputOwnerPkHashes []string           `json:"publishedOutputOwnerPkHashes"`
-	PublicInputHash              string             `json:"publicInputHash"`
+	CircuitType                  common.CircuitType          `json:"circuitType"`
+	NInputs                      uint32                      `json:"nInputs"`
+	NOutputs                     uint32                      `json:"nOutputs"`
+	Inputs                       []InputParamsJSON           `json:"inputs"`
+	Outputs                      []OutputParamsJSON          `json:"outputs"`
+	TreeSlots                    []common.TreeSlotParamsJSON `json:"treeSlots"`
+	OutputTreeID                 string                      `json:"outputTreeId"`
+	ExternalDataHash             string                      `json:"externalDataHash"`
+	PrivateTxHash                string                      `json:"privateTxHash"`
+	BlindingSeed                 string                      `json:"blindingSeed"`
+	P256PubX                     string                      `json:"p256PubX"`
+	P256PubY                     string                      `json:"p256PubY"`
+	P256SigR                     string                      `json:"p256SigR"`
+	P256SigS                     string                      `json:"p256SigS"`
+	P256MessageHashLow           string                      `json:"p256MessageHashLow"`
+	P256MessageHashHigh          string                      `json:"p256MessageHashHigh"`
+	DefaultP256OwnerPkHash       string                      `json:"defaultP256OwnerPkHash"`
+	PublicAssets                 []string                    `json:"publicAssets"`
+	PublicAmounts                []string                    `json:"publicAmounts"`
+	RingProgramID                string                      `json:"ringProgramId"`
+	SignerPkHashes               []string                    `json:"signerPkHashes"`
+	InputFlags                   string                      `json:"inputFlags"`
+	PublishedOutputOwnerPkHashes []string                    `json:"publishedOutputOwnerPkHashes"`
+	CacheSelectionJSON
+	PublicInputHash string `json:"publicInputHash"`
 }
 
 func (p *P256TransferParameters) MarshalJSON() ([]byte, error) {
@@ -75,13 +91,16 @@ func (p *P256TransferParameters) MarshalJSON() ([]byte, error) {
 		NOutputs:                     p.NOutputs,
 		Inputs:                       p.Inputs,
 		Outputs:                      p.Outputs,
+		TreeSlots:                    p.TreeSlots,
+		OutputTreeID:                 p.OutputTreeID,
 		ExternalDataHash:             p.ExternalDataHash,
 		PrivateTxHash:                p.PrivateTxHash,
+		BlindingSeed:                 p.BlindingSeed,
 		PublicAssets:                 p.PublicAssets,
 		PublicAmounts:                p.PublicAmounts,
 		RingProgramID:                p.RingProgramID,
 		SignerPkHashes:               p.SignerPkHashes,
-		AllowDummyInputs:             p.AllowDummyInputs,
+		InputFlags:                   p.InputFlags,
 		PublishedOutputOwnerPkHashes: p.PublishedOutputOwnerPkHashes,
 		Variant:                      RingVariant,
 		PublicInputHash:              p.PublicInputHash,
@@ -92,21 +111,25 @@ func (p *P256TransferParameters) MarshalJSON() ([]byte, error) {
 		NOutputs:                     base.NOutputs,
 		Inputs:                       base.Inputs,
 		Outputs:                      base.Outputs,
+		TreeSlots:                    base.TreeSlots,
+		OutputTreeID:                 base.OutputTreeID,
 		ExternalDataHash:             base.ExternalDataHash,
 		PrivateTxHash:                base.PrivateTxHash,
-		P256PubX:                     feHex(p.P256PubX),
-		P256PubY:                     feHex(p.P256PubY),
-		P256SigR:                     feHex(p.P256SigR),
-		P256SigS:                     feHex(p.P256SigS),
-		P256MessageHashLow:           feHex(p.P256MessageHashLow),
-		P256MessageHashHigh:          feHex(p.P256MessageHashHigh),
-		DefaultP256OwnerPkHash:       feHex(p.DefaultP256OwnerPkHash),
+		BlindingSeed:                 base.BlindingSeed,
+		P256PubX:                     common.FeHex(p.P256PubX),
+		P256PubY:                     common.FeHex(p.P256PubY),
+		P256SigR:                     common.FeHex(p.P256SigR),
+		P256SigS:                     common.FeHex(p.P256SigS),
+		P256MessageHashLow:           common.FeHex(p.P256MessageHashLow),
+		P256MessageHashHigh:          common.FeHex(p.P256MessageHashHigh),
+		DefaultP256OwnerPkHash:       common.FeHex(p.DefaultP256OwnerPkHash),
 		PublicAssets:                 base.PublicAssets,
 		PublicAmounts:                base.PublicAmounts,
 		RingProgramID:                base.RingProgramID,
 		SignerPkHashes:               base.SignerPkHashes,
-		AllowDummyInputs:             base.AllowDummyInputs,
+		InputFlags:                   base.InputFlags,
 		PublishedOutputOwnerPkHashes: base.PublishedOutputOwnerPkHashes,
+		CacheSelectionJSON:           base.CacheSelectionJSON,
 		PublicInputHash:              base.PublicInputHash,
 	})
 }
@@ -126,14 +149,18 @@ func (p *P256TransferParameters) UnmarshalJSON(data []byte) error {
 		NOutputs:                     params.NOutputs,
 		Inputs:                       params.Inputs,
 		Outputs:                      params.Outputs,
+		TreeSlots:                    params.TreeSlots,
+		OutputTreeID:                 params.OutputTreeID,
 		ExternalDataHash:             params.ExternalDataHash,
 		PrivateTxHash:                params.PrivateTxHash,
+		BlindingSeed:                 params.BlindingSeed,
 		PublicAssets:                 params.PublicAssets,
 		PublicAmounts:                params.PublicAmounts,
 		RingProgramID:                params.RingProgramID,
 		SignerPkHashes:               params.SignerPkHashes,
-		AllowDummyInputs:             params.AllowDummyInputs,
+		InputFlags:                   params.InputFlags,
 		PublishedOutputOwnerPkHashes: params.PublishedOutputOwnerPkHashes,
+		CacheSelectionJSON:           params.CacheSelectionJSON,
 		PublicInputHash:              params.PublicInputHash,
 	}); err != nil {
 		return err
@@ -142,14 +169,18 @@ func (p *P256TransferParameters) UnmarshalJSON(data []byte) error {
 	p.NOutputs = base.NOutputs
 	p.Inputs = base.Inputs
 	p.Outputs = base.Outputs
+	p.TreeSlots = base.TreeSlots
+	p.OutputTreeID = base.OutputTreeID
 	p.ExternalDataHash = base.ExternalDataHash
 	p.PrivateTxHash = base.PrivateTxHash
+	p.BlindingSeed = base.BlindingSeed
 	p.PublicAssets = base.PublicAssets
 	p.PublicAmounts = base.PublicAmounts
 	p.RingProgramID = base.RingProgramID
 	p.SignerPkHashes = base.SignerPkHashes
-	p.AllowDummyInputs = base.AllowDummyInputs
+	p.InputFlags = base.InputFlags
 	p.PublishedOutputOwnerPkHashes = base.PublishedOutputOwnerPkHashes
+	p.Cache = base.Cache
 	p.PublicInputHash = base.PublicInputHash
 
 	var err error
@@ -162,7 +193,7 @@ func (p *P256TransferParameters) UnmarshalJSON(data []byte) error {
 		&p.P256MessageHashHigh:    params.P256MessageHashHigh,
 		&p.DefaultP256OwnerPkHash: params.DefaultP256OwnerPkHash,
 	} {
-		if *target, err = feFromHex(encoded); err != nil {
+		if *target, err = common.FeFromHex(encoded); err != nil {
 			return err
 		}
 	}
@@ -171,23 +202,28 @@ func (p *P256TransferParameters) UnmarshalJSON(data []byte) error {
 
 func (p *P256TransferParameters) ValidateShape() error {
 	return (&TransferParameters{
-		NInputs:  p.NInputs,
-		NOutputs: p.NOutputs,
-		Inputs:   p.Inputs,
-		Outputs:  p.Outputs,
+		NInputs:      p.NInputs,
+		NOutputs:     p.NOutputs,
+		Inputs:       p.Inputs,
+		Outputs:      p.Outputs,
+		TreeSlots:    p.TreeSlots,
+		OutputTreeID: p.OutputTreeID,
+		InputFlags:   p.InputFlags,
+		Cache:        p.Cache,
 	}).ValidateShape()
 }
 
 func (p *P256TransferParameters) CreateWitness() (frontend.Circuit, error) {
-	core, err := buildWitnessCore(p.Inputs, p.Outputs, p.PublicAssets, p.PublicAmounts)
+	core, err := buildWitnessCore(p.Inputs, p.Outputs, p.TreeSlots, p.PublicAssets, p.PublicAmounts)
 	if err != nil {
 		return nil, err
 	}
-	if len(p.SignerPkHashes) != int(p.NInputs)+1 {
+	shape := txcircuit.Shape{NInputs: int(p.NInputs), NOutputs: int(p.NOutputs)}
+	if len(p.SignerPkHashes) != shape.SignerWidth() {
 		return nil, fmt.Errorf(
 			"spp: signer pk hash count mismatch: got %d want %d",
 			len(p.SignerPkHashes),
-			p.NInputs+1,
+			shape.SignerWidth(),
 		)
 	}
 	if len(p.PublishedOutputOwnerPkHashes) != len(p.Outputs) {
@@ -212,12 +248,13 @@ func (p *P256TransferParameters) CreateWitness() (frontend.Circuit, error) {
 		outputNullifierPks[i] = orZero(out.NullifierPk)
 	}
 	return &customring.CustomRingP256Circuit{
-		Shape: txcircuit.Shape{NInputs: int(p.NInputs), NOutputs: int(p.NOutputs)},
+		CachedInputs: p.Cache.circuitInputs(int(p.NInputs)),
+		Shape:        txcircuit.Shape{NInputs: int(p.NInputs), NOutputs: int(p.NOutputs)},
 		Public: customring.CustomRingP256Public{
 			Nullifiers:                   core.nullifiers,
 			OutputHashes:                 core.outputHashes,
-			UtxoTreeRoots:                core.utxoTreeRoots,
-			NullifierTreeRoots:           core.nullifierTreeRoots,
+			TreeSlots:                    core.treeSlots,
+			OutputTreeID:                 p.OutputTreeID,
 			PrivateTxHash:                p.PrivateTxHash,
 			P256MessageHashLow:           p.P256MessageHashLow,
 			P256MessageHashHigh:          p.P256MessageHashHigh,
@@ -226,7 +263,7 @@ func (p *P256TransferParameters) CreateWitness() (frontend.Circuit, error) {
 			PublicAssets:                 core.publicAssets,
 			PublicAmounts:                core.publicAmounts,
 			RingProgramID:                p.RingProgramID,
-			AllowDummyInputs:             p.AllowDummyInputs,
+			InputFlags:                   p.InputFlags,
 			SignerPkHashes:               signerPkHashes,
 			PublishedOutputOwnerPkHashes: publishedOutputOwnerPkHashes,
 			PublicInputHash:              p.PublicInputHash,
@@ -237,6 +274,7 @@ func (p *P256TransferParameters) CreateWitness() (frontend.Circuit, error) {
 			Outputs:             core.outputs,
 			OutputOwnerPkHashes: outputOwnerPkHashes,
 			OutputNullifierPks:  outputNullifierPks,
+			BlindingSeed:        p.BlindingSeed,
 			P256Pub: customring.P256PublicKey{
 				X: emulated.ValueOf[emulated.P256Fp](p.P256PubX),
 				Y: emulated.ValueOf[emulated.P256Fp](p.P256PubY),
@@ -304,5 +342,5 @@ func ProveP256Transfer(ps *common.TransferProofSystem, params *P256TransferParam
 	if err != nil {
 		return nil, fmt.Errorf("error proving P256 transfer: %w", err)
 	}
-	return &common.Proof{Proof: proof}, nil
+	return &common.Proof{Proof: proof, ProvingKeySha256: ps.ProvingKeySha256}, nil
 }

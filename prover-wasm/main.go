@@ -25,6 +25,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/consensys/gnark/backend/groth16"
@@ -71,7 +72,7 @@ func (r *registry) put(key string, ps *common.TransferProofSystem) {
 	clear(r.systems)
 	clear(r.prepared)
 	runtime.GC()
-	c := &preparedCircuit{cs: ps.ConstraintSystem.(*cs.R1CS), pk: ps.ProvingKey}
+	c := &preparedCircuit{cs: ps.ConstraintSystem.(*cs.R1CS), pk: ps.ProvingKey, digest: ps.ProvingKeySha256}
 	prepareKernel(c)
 	r.systems[key] = ps
 	r.prepared[key] = c
@@ -146,6 +147,9 @@ func (r *registry) loadKey(args []js.Value) any {
 	if _, err := ps.UnsafeReadFrom(bytes.NewReader(raw)); err != nil {
 		return errorResult(fmt.Errorf("deserializing %s: %w", name, err))
 	}
+	// Proofs report this digest so clients can match it to the proving key
+	// pinned next to their verifying key, as common.ReadSystemFromFile does.
+	ps.ProvingKeySha256 = sha256.Sum256(raw)
 	ps.CircuitType = circuitType
 	ps.Confidential = circuitType != common.TransferRingAuthorityCircuitType
 
@@ -227,7 +231,8 @@ func (r *registry) proveMerge(request []byte, circuitType common.CircuitType) (*
 	if err := json.Unmarshal(request, &params); err != nil {
 		return nil, fmt.Errorf("decoding merge parameters: %w", err)
 	}
-	key := cacheKey(circuitType, mergeprover.MergeNInputs, mergeprover.MergeNOutputs)
+	// Merge parameters carry no shape field; the input count selects the key.
+	key := cacheKey(circuitType, uint32(len(params.Inputs)), mergeprover.MergeNOutputs)
 	ps, ok := r.get(key)
 	if !ok {
 		return nil, fmt.Errorf("proving key %s is not loaded; call loadKey first", key)
@@ -254,7 +259,7 @@ func (r *registry) verify(args []js.Value) any {
 			return errorResult(err)
 		}
 		params = p
-		key = cacheKey(meta.CircuitType, mergeprover.MergeNInputs, mergeprover.MergeNOutputs)
+		key = cacheKey(meta.CircuitType, uint32(len(p.Inputs)), mergeprover.MergeNOutputs)
 	} else {
 		p := new(transfereddsaonly.TransferParameters)
 		if err := json.Unmarshal(request, p); err != nil {

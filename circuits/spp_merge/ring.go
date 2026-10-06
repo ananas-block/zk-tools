@@ -41,11 +41,14 @@ type RingCircuit struct {
 	PublicInputHash frontend.Variable `gnark:",public"`
 }
 
-func NewMergeRingCircuit() *RingCircuit {
+// NewMergeRingCircuit allocates the policy-ring merge circuit for n input
+// slots. One proving system exists per supported count; Define rejects any
+// other.
+func NewMergeRingCircuit(n int) *RingCircuit {
 	return &RingCircuit{
-		NumInputs:          MergeInputs,
-		Inputs:             mergeshared.NewInputs(),
-		CommonPublicInputs: mergeshared.NewCommonPublicInputs(),
+		NumInputs:          n,
+		Inputs:             mergeshared.NewInputs(n),
+		CommonPublicInputs: mergeshared.NewCommonPublicInputs(n),
 	}
 }
 
@@ -75,6 +78,6 @@ func (c *RingCircuit) Define(api frontend.API) error {
 
 	fields := c.CommonPublicInputs.Prefix(api)
 	fields = append(fields, c.OutputRingDataHash, c.RingProgramID)
-	api.AssertIsEqual(c.PublicInputHash, gadget.HashChain(api, fields))
+	api.AssertIsEqual(c.PublicInputHash, gadget.HashChain4(api, fields))
 	return nil
 }

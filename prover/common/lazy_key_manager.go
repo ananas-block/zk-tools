@@ -16,6 +16,9 @@ type LazyKeyManager struct {
 	keysDir           string
 	downloadConfig    *DownloadConfig
 	loadingInProgress map[string]chan struct{}
+	// loadedDigests maps a loaded key's file name to the sha256 of the bytes
+	// read, for GET /proving-keys.
+	loadedDigests map[string][32]byte
 }
 
 func NewLazyKeyManager(keysDir string, downloadConfig *DownloadConfig) *LazyKeyManager {
@@ -29,11 +32,12 @@ func NewLazyKeyManager(keysDir string, downloadConfig *DownloadConfig) *LazyKeyM
 		keysDir:           keysDir,
 		downloadConfig:    downloadConfig,
 		loadingInProgress: make(map[string]chan struct{}),
+		loadedDigests:     make(map[string][32]byte),
 	}
 }
 
-func (m *LazyKeyManager) GetRingSystem(circuitType CircuitType, variant string) (*RingProofSystem, error) {
-	key := fmt.Sprintf("%s_%s", circuitType, variant)
+func (m *LazyKeyManager) GetRingSystem(circuitType CircuitType) (*RingProofSystem, error) {
+	key := string(circuitType)
 	m.mu.RLock()
 	if ps, exists := m.ringSystems[key]; exists {
 		m.mu.RUnlock()
@@ -54,9 +58,9 @@ func (m *LazyKeyManager) GetRingSystem(circuitType CircuitType, variant string) 
 	}
 	defer m.releaseLoadingLock(key, loadChan)
 
-	keyPath := m.determineRingKeyPath(circuitType, variant)
+	keyPath := m.determineRingKeyPath(circuitType)
 	if keyPath == "" {
-		return nil, fmt.Errorf("no key file mapping for %s variant %s", circuitType, variant)
+		return nil, fmt.Errorf("no key file mapping for circuit %s", circuitType)
 	}
 	if err := EnsureProvingKey(keyPath, m.downloadConfig.AutoDownload, m.downloadConfig); err != nil {
 		return nil, fmt.Errorf("failed to download key %s: %w", keyPath, err)
@@ -71,6 +75,7 @@ func (m *LazyKeyManager) GetRingSystem(circuitType CircuitType, variant string) 
 	}
 	m.mu.Lock()
 	m.ringSystems[key] = ps
+	m.loadedDigests[filepath.Base(keyPath)] = ps.ProvingKeySha256
 	m.mu.Unlock()
 	return ps, nil
 }
@@ -147,6 +152,7 @@ func (m *LazyKeyManager) loadBatchSystem(key string, circuitType CircuitType, tr
 
 	m.mu.Lock()
 	m.batchSystems[key] = ps
+	m.loadedDigests[filepath.Base(keyPath)] = ps.ProvingKeySha256
 	m.mu.Unlock()
 
 	logging.Logger().Info().
@@ -199,6 +205,7 @@ func (m *LazyKeyManager) loadTransferSystem(key string, circuitType CircuitType,
 
 	m.mu.Lock()
 	m.transferSystems[key] = ps
+	m.loadedDigests[filepath.Base(keyPath)] = ps.ProvingKeySha256
 	m.mu.Unlock()
 
 	logging.Logger().Info().
@@ -273,6 +280,27 @@ var transferSupportedShapes = [][2]uint32{
 	{5, 3},
 	{5, 4},
 	{1, 8},
+	// Consolidation shape; keep in sync with protocol.SupportedShapes.
+	{36, 2},
+}
+
+// mergeSupportedInputCounts mirrors mergeshared.SupportedInputCounts. Kept here
+// because common must not import the circuit packages; keep in sync with
+// circuits/spp_merge/shared/transaction.go.
+var mergeSupportedInputCounts = []uint32{8, 36}
+
+// mergeKeyPath resolves a merge key file. Merge always produces one output, so
+// only the input count varies across shapes.
+func (m *LazyKeyManager) mergeKeyPath(prefix string, nInputs uint32, nOutputs uint32) string {
+	if nOutputs != 1 {
+		return ""
+	}
+	for _, supported := range mergeSupportedInputCounts {
+		if supported == nInputs {
+			return m.keyPath(fmt.Sprintf("%s_%d_1.key", prefix, nInputs))
+		}
+	}
+	return ""
 }
 
 func (m *LazyKeyManager) determineTransferKeyPath(circuitType CircuitType, nInputs uint32, nOutputs uint32) string {
@@ -287,16 +315,9 @@ func (m *LazyKeyManager) determineTransferKeyPath(circuitType CircuitType, nInpu
 	case TransferRingAuthorityCircuitType:
 		prefix = "transfer_ring_authority"
 	case MergeCircuitType:
-		// Merge has the single fixed 8-in/1-out shape (see prover/merge).
-		if nInputs == 8 && nOutputs == 1 {
-			return m.keyPath("merge_8_1.key")
-		}
-		return ""
+		return m.mergeKeyPath("merge", nInputs, nOutputs)
 	case MergeRingCircuitType:
-		if nInputs == 8 && nOutputs == 1 {
-			return m.keyPath("merge_ring_8_1.key")
-		}
-		return ""
+		return m.mergeKeyPath("merge_ring", nInputs, nOutputs)
 	default:
 		return ""
 	}
@@ -310,11 +331,12 @@ func (m *LazyKeyManager) determineTransferKeyPath(circuitType CircuitType, nInpu
 	return ""
 }
 
-func (m *LazyKeyManager) determineRingKeyPath(circuitType CircuitType, variant string) string {
-	if circuitType == CustomRingCircuitType && variant == "transfer" {
-		return m.keyPath(CustomRingKeyFile)
+func (m *LazyKeyManager) determineRingKeyPath(circuitType CircuitType) string {
+	file, ok := RingKeyFiles[circuitType]
+	if !ok {
+		return ""
 	}
-	return ""
+	return m.keyPath(file)
 }
 
 func (m *LazyKeyManager) GetStats() map[string]interface{} {
@@ -420,7 +442,7 @@ func (m *LazyKeyManager) preloadKeys(keyPaths []string) error {
 			return fmt.Errorf("failed to load key %s: %w", keyPath, err)
 		}
 
-		if err := m.cacheSystem(system); err != nil {
+		if err := m.cacheSystem(keyPath, system); err != nil {
 			return fmt.Errorf("failed to cache key %s: %w", keyPath, err)
 		}
 	}
@@ -432,7 +454,7 @@ func (m *LazyKeyManager) preloadKeys(keyPaths []string) error {
 	return nil
 }
 
-func (m *LazyKeyManager) cacheSystem(system interface{}) error {
+func (m *LazyKeyManager) cacheSystem(keyPath string, system interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -440,6 +462,7 @@ func (m *LazyKeyManager) cacheSystem(system interface{}) error {
 	case *BatchProofSystem:
 		key := fmt.Sprintf("%s_%d_%d", ps.CircuitType, ps.TreeHeight, ps.BatchSize)
 		m.batchSystems[key] = ps
+		m.loadedDigests[filepath.Base(keyPath)] = ps.ProvingKeySha256
 		logging.Logger().Debug().
 			Str("cache_key", key).
 			Msg("Cached BatchProofSystem")
@@ -447,13 +470,14 @@ func (m *LazyKeyManager) cacheSystem(system interface{}) error {
 	case *TransferProofSystem:
 		key := fmt.Sprintf("%s_%d_%d", ps.CircuitType, ps.NInputs, ps.NOutputs)
 		m.transferSystems[key] = ps
+		m.loadedDigests[filepath.Base(keyPath)] = ps.ProvingKeySha256
 		logging.Logger().Debug().
 			Str("cache_key", key).
 			Msg("Cached TransferProofSystem")
 
 	case *RingProofSystem:
-		key := fmt.Sprintf("%s_%s", ps.CircuitType, ps.Variant)
-		m.ringSystems[key] = ps
+		m.ringSystems[string(ps.CircuitType)] = ps
+		m.loadedDigests[filepath.Base(keyPath)] = ps.ProvingKeySha256
 
 	default:
 		return fmt.Errorf("unknown system type: %T", system)
