@@ -5,6 +5,7 @@ import (
 	"math/big"
 
 	"zolana/prover/prover-test/poseidon"
+	prooftranscript "zolana/prover/prover/transcript"
 )
 
 // HashChain folds values from left to right:
@@ -42,51 +43,14 @@ func HashChain(inputs []*big.Int) (*big.Int, error) {
 // Every call is the 4-input permutation; a short trailing group is zero
 // padded. Only chains whose length the compiled circuit fixes may use it.
 func HashChain4(inputs []*big.Int) (*big.Int, error) {
-	if len(inputs) == 0 {
-		return new(big.Int), nil
-	}
-	for i, input := range inputs {
-		if err := validateFieldElement(fmt.Sprintf("input[%d]", i), input); err != nil {
-			return nil, fmt.Errorf("spp: hash chain 4: %w", err)
-		}
-	}
-
-	h := new(big.Int).Set(inputs[0])
-	for start := 1; start < len(inputs); start += 3 {
-		group := []*big.Int{h, new(big.Int), new(big.Int), new(big.Int)}
-		for j := 0; j < 3 && start+j < len(inputs); j++ {
-			group[1+j] = inputs[start+j]
-		}
-		next, err := poseidon.Hash(group)
-		if err != nil {
-			return nil, fmt.Errorf("spp: hash chain 4 step %d: %w", start, err)
-		}
-		h = next
-	}
-	return h, nil
+	return prooftranscript.HashChain4(inputs)
 }
 
 // RightHashChain folds values from right to left. The fixed-width signer
 // transcript uses this direction so the on-chain verifier can start from a
 // precomputed all-zero suffix.
 func RightHashChain(inputs []*big.Int) (*big.Int, error) {
-	if len(inputs) == 0 {
-		return new(big.Int), nil
-	}
-	for i, input := range inputs {
-		if err := validateFieldElement(fmt.Sprintf("input[%d]", i), input); err != nil {
-			return nil, fmt.Errorf("spp: right hash chain: %w", err)
-		}
-	}
-	h := new(big.Int).Set(inputs[len(inputs)-1])
-	for i := len(inputs) - 2; i >= 0; i-- {
-		next, err := poseidon.Hash([]*big.Int{inputs[i], h})
-		if err != nil {
-			return nil, fmt.Errorf("spp: right hash chain step %d: %w", i, err)
-		}
-		h = next
-	}
-	return h, nil
+	return prooftranscript.RightHashChain(inputs)
 }
 
 // RightHashChain4 mirrors gadget.RightHashChain4: h = inputs[len-1], then,
@@ -126,27 +90,50 @@ func RightHashChain4(inputs []*big.Int) (*big.Int, error) {
 	return h, nil
 }
 
+// NonZeroHashChain mirrors gadget.NonZeroHashChain: zero entries leave h
+// unchanged, the first nonzero v becomes h, and every later nonzero v folds as
+// h = Poseidon(h, v). A chain without a nonzero entry is 0.
+func NonZeroHashChain(inputs []*big.Int) (*big.Int, error) {
+	h := new(big.Int)
+	for i, input := range inputs {
+		if err := validateFieldElement(fmt.Sprintf("input[%d]", i), input); err != nil {
+			return nil, fmt.Errorf("spp: nonzero hash chain: %w", err)
+		}
+		if input.Sign() == 0 {
+			continue
+		}
+		if h.Sign() == 0 {
+			h = new(big.Int).Set(input)
+			continue
+		}
+		next, err := poseidon.Hash([]*big.Int{h, input})
+		if err != nil {
+			return nil, fmt.Errorf("spp: nonzero hash chain step %d: %w", i, err)
+		}
+		h = next
+	}
+	return h, nil
+}
+
 // PrivateTxHash mirrors PrivateTxHashGadget. addressNullifiers is the address
 // category (the nullifier, i.e. the compressed address, of every address slot;
-// 0 for real spends and padding); it has the same length as inputUtxoHashes.
-// blinding is the transaction's private blinding, which the circuit rejects
-// when zero.
+// 0 for real spends and padding). blinding is the transaction's private
+// blinding, which the circuit rejects when zero.
 func PrivateTxHash(
 	inputUtxoHashes []*big.Int,
 	outputUtxoHashes []*big.Int,
 	addressNullifiers []*big.Int,
-	externalDataHash *big.Int,
 	blinding *big.Int,
 ) (*big.Int, error) {
-	inputChain, err := HashChain4(inputUtxoHashes)
+	inputChain, err := NonZeroHashChain(inputUtxoHashes)
 	if err != nil {
 		return nil, fmt.Errorf("spp: private tx hash input chain: %w", err)
 	}
-	outputChain, err := HashChain4(outputUtxoHashes)
+	outputChain, err := NonZeroHashChain(outputUtxoHashes)
 	if err != nil {
 		return nil, fmt.Errorf("spp: private tx hash output chain: %w", err)
 	}
-	addressChain, err := HashChain4(addressNullifiers)
+	addressChain, err := NonZeroHashChain(addressNullifiers)
 	if err != nil {
 		return nil, fmt.Errorf("spp: private tx hash address chain: %w", err)
 	}
@@ -155,7 +142,6 @@ func PrivateTxHash(
 		inputChain,
 		outputChain,
 		addressChain,
-		externalDataHash,
 		blinding,
 	})
 	if err != nil {

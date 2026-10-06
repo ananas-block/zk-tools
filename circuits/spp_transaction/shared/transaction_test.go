@@ -20,12 +20,13 @@ import (
 func TestTransactionRejectsMalformedTreeSlots(t *testing.T) {
 	newTransaction := func() Transaction {
 		return Transaction{
-			Shape:        Shape{NInputs: 1, NOutputs: 1},
-			Inputs:       NewInputs(1),
-			Outputs:      make([]UtxoCircuitFields, 1),
-			Nullifiers:   make([]frontend.Variable, 1),
-			OutputHashes: make([]frontend.Variable, 1),
-			TreeSlots:    NewTreeSlots(),
+			Shape:           Shape{NInputs: 1, NOutputs: 1},
+			Inputs:          NewInputs(1),
+			Outputs:         make([]UtxoCircuitFields, 1),
+			Nullifiers:      make([]frontend.Variable, 1),
+			OutputHashes:    make([]frontend.Variable, 1),
+			OutputIsCompact: make([]frontend.Variable, 1),
+			TreeSlots:       NewTreeSlots(),
 		}
 	}
 	if err := newTransaction().ValidateLayout(); err != nil {
@@ -428,7 +429,6 @@ func buildCircuitAssignmentExact(
 		inputHashes,
 		OutputHashes,
 		noAddressNullifiers(shape.NInputs),
-		externalDataHash,
 		privateTxBlinding,
 	)
 	payerPkHash := testPayerPkHash()
@@ -719,7 +719,6 @@ func rebuildAfterOwnerChange(t testing.TB, assignment *testAssignment) {
 		inputHashes,
 		OutputHashes,
 		noAddressNullifiers(len(inputHashes)),
-		spptest.AsBigInt(assignment.ExternalDataHash),
 		assignment.privateTxBlinding(t),
 	)
 	assignment.PrivateTxHash = privateTxHash
