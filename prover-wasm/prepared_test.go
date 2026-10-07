@@ -81,14 +81,14 @@ func (k *referenceKernel) commitment(index int, knowledge bool, values []fr.Elem
 }
 
 func TestZolanaMoproTransfer(t *testing.T) {
-	key, err := os.ReadFile("../../examples/browser/public/keys/transfer_confidential_2_3.key")
+	key, err := os.ReadFile("../../examples/browser/public/keys/transfer_confidential_2_2.key")
 	if os.IsNotExist(err) {
 		t.Skip("stage the local demo key first")
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile("testdata/transfer-2x3.json")
+	data, err := os.ReadFile("testdata/transfer-2x2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
