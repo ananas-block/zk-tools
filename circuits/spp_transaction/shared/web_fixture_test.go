@@ -18,17 +18,17 @@ import (
 	transfer "zolana/prover/prover/transfer_eddsa_only"
 )
 
-// Not upstream: writes the web prover's 2x3 demo request, a deterministic
+// Not upstream: writes the web prover's 2x2 demo request, a deterministic
 // satisfying transfer_confidential witness in `/prove` JSON.
 //
-//	WEB_FIXTURE=$PWD/prover-wasm/testdata/transfer-2x3.json go test ./circuits/spp_transaction/shared -run TestWriteWebFixture
+//	WEB_FIXTURE=$PWD/prover-wasm/testdata/transfer-2x2.json go test ./circuits/spp_transaction/shared -run TestWriteWebFixture
 func TestWriteWebFixture(t *testing.T) {
 	path := os.Getenv("WEB_FIXTURE")
 	if path == "" {
 		t.Skip("WEB_FIXTURE is unset")
 	}
 	cryptotest.SetGlobalRandom(t, 0)
-	assignment := buildDefaultRingEddsaOnlyAssignment(t, protocol.Shape{NInputs: 2, NOutputs: 3})
+	assignment := buildDefaultRingEddsaOnlyAssignment(t, protocol.Shape{NInputs: 2, NOutputs: 2})
 	assignment.BlindingSeed = big.NewInt(800)
 	rebuildAfterOwnerChange(t, assignment)
 	refreshDefaultRingPublicInputHash(t, assignment)
