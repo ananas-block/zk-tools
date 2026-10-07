@@ -271,12 +271,15 @@ func TestInvalidKeysRejected(t *testing.T) {
 
 func fixtureRequest(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile("testdata/transfer-2x3.json")
+	data, err := os.ReadFile("testdata/transfer-2x2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return string(data)
 }
+
+// fixtureDomain is how the request fixture spells its UTXO domain.
+const fixtureDomain = "\"domain\":\"0x0000000000000000000000000000000000000000000000000000000000000003\""
 
 func TestStructuredRequestRejectsAdversarialInput(t *testing.T) {
 	request := fixtureRequest(t)
@@ -287,11 +290,11 @@ func TestStructuredRequestRejectsAdversarialInput(t *testing.T) {
 		strings.Replace(request, "\"nInputs\":2", "\"nInputs\":2,\"nInputs\":2", 1),
 		strings.Replace(request, "\"nInputs\":2", "\"NInputs\":2", 1),
 		strings.Replace(request, "\"nInputs\":2", "\""+sentinel+"\":2", 1),
-		strings.Replace(request, "\"domain\":\"0x3\"", "\"domain\":\""+sentinel+"\"", 1),
-		strings.Replace(request, "\"domain\":\"0x3\"", "\"domain\":3.9", 1),
-		strings.Replace(request, "\"domain\":\"0x3\"", "\"domain\":\"-1\"", 1),
-		strings.Replace(request, "\"domain\":\"0x3\"", "\"domain\":\"0x"+ecc.BN254.ScalarField().Text(16)+"\"", 1),
-		strings.Replace(request, "\"domain\":\"0x3\"", "\"domain\":\"0x3\",\"domain\":\"0x3\"", 1),
+		strings.Replace(request, fixtureDomain, "\"domain\":\""+sentinel+"\"", 1),
+		strings.Replace(request, fixtureDomain, "\"domain\":3.9", 1),
+		strings.Replace(request, fixtureDomain, "\"domain\":\"-1\"", 1),
+		strings.Replace(request, fixtureDomain, "\"domain\":\"0x"+ecc.BN254.ScalarField().Text(16)+"\"", 1),
+		strings.Replace(request, fixtureDomain, fixtureDomain+","+fixtureDomain, 1),
 	}
 	for index, input := range cases {
 		if input == request {
@@ -396,7 +399,7 @@ func TestTransferFixture(t *testing.T) {
 	}
 	compareWitnesses(t, system, request, assignment, flattenAssignment(t, assignment))
 	if !testing.Short() {
-		proveFixture(t, system, request, 2, 3)
+		proveFixture(t, system, request, 2, 2)
 	}
 }
 
@@ -405,7 +408,7 @@ func TestStagedTransferKeys(t *testing.T) {
 	if dir == "" {
 		t.Skip("set ZOLANA_TEST_KEYS for pinned deployed key interoperability")
 	}
-	prefix := filepath.Join(dir, "transfer_confidential_2_3")
+	prefix := filepath.Join(dir, "transfer_confidential_2_2")
 	handle, err := loadPrepared(prefix+".r1cs", prefix+".pk", prefix+".vk")
 	if err != nil {
 		t.Fatal(err)
@@ -430,14 +433,14 @@ func TestStagedTransferKeys(t *testing.T) {
 		}
 		t.Fatal("request witness", err)
 	}
-	flattened, err := os.ReadFile("testdata/witness-2x3.json")
+	flattened, err := os.ReadFile("testdata/witness-2x2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	compareWitnesses(t, prepared[handle].cs, request, assignment, string(flattened))
 	for index := 0; index < 2; index++ {
 		result, err := provePrepared(handle, request)
-		if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 3 {
+		if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 2 {
 			t.Fatal("staged structured proof failed", err)
 		}
 		if valid, err := verifyPrepared(handle, result.proof, result.publicInputs); err != nil || !valid {
@@ -562,7 +565,7 @@ func TestMergeFixture(t *testing.T) {
 	assignment = buildWitness(t, true)
 	compareWitnesses(t, system, string(encoded), assignment, "")
 	if !testing.Short() {
-		proveFixture(t, system, string(encoded), 8, 1)
+		proveFixture(t, system, string(encoded), 24, 1)
 	}
 }
 
@@ -598,15 +601,15 @@ func TestKeyFileContainer(t *testing.T) {
 		t.Fatal(err)
 	}
 	prover := &preparedProver{cs: system, pk: pk.(*native.ProvingKey), vk: vk.(*native.VerifyingKey)}
-	path := filepath.Join(t.TempDir(), "transfer_confidential_2_3.key")
+	path := filepath.Join(t.TempDir(), "transfer_confidential_2_2.key")
 
-	writeKeyFile(t, path, [3]uint32{2, 3, 0}, prover, nil)
+	writeKeyFile(t, path, [3]uint32{2, 2, 0}, prover, nil)
 	handle, err := loadPreparedKey(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result, err := provePrepared(handle, request)
-	if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 3 {
+	if err != nil || !result.shapeKnown || result.inputs != 2 || result.outputs != 2 {
 		t.Fatal("container proof failed", err)
 	}
 	if valid, err := verifyPrepared(handle, result.proof, result.publicInputs); err != nil || !valid {
@@ -618,9 +621,9 @@ func TestKeyFileContainer(t *testing.T) {
 		header  [3]uint32
 		trailer []byte
 	}{
-		"p256 rail":     {[3]uint32{2, 3, 1}, nil},
+		"p256 rail":     {[3]uint32{2, 2, 1}, nil},
 		"header shape":  {[3]uint32{1, 3, 0}, nil},
-		"trailing byte": {[3]uint32{2, 3, 0}, []byte{0}},
+		"trailing byte": {[3]uint32{2, 2, 0}, []byte{0}},
 	} {
 		writeKeyFile(t, path, tamper.header, prover, tamper.trailer)
 		if _, err := loadPreparedKey(path); err != errKey {
@@ -645,7 +648,7 @@ func TestKeyFileContainer(t *testing.T) {
 func TestStagedKeyFile(t *testing.T) {
 	path := os.Getenv("ZOLANA_TEST_KEY_FILE")
 	if path == "" {
-		t.Skip("set ZOLANA_TEST_KEY_FILE to a pinned transfer_confidential_2_3.key")
+		t.Skip("set ZOLANA_TEST_KEY_FILE to a pinned transfer_confidential_2_2.key")
 	}
 	handle, err := loadPreparedKey(path)
 	if err != nil {
@@ -653,7 +656,7 @@ func TestStagedKeyFile(t *testing.T) {
 	}
 	defer releasePrepared(handle)
 	result, err := provePrepared(handle, fixtureRequest(t))
-	if err != nil || result.inputs != 2 || result.outputs != 3 {
+	if err != nil || result.inputs != 2 || result.outputs != 2 {
 		t.Fatal("staged key file proof failed", err)
 	}
 	if valid, err := verifyPrepared(handle, result.proof, result.publicInputs); err != nil || !valid {
