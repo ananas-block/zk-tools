@@ -24,7 +24,7 @@ const (
 // Merge instruction data carries no circuit selector: both the prover and the
 // program derive the shape from the declared nullifier count, so every side
 // must agree on which counts exist.
-var SupportedInputCounts = []int{8, 36}
+var SupportedInputCounts = []int{8, 24, 54}
 
 // IsSupportedInputCount reports whether a merge circuit exists for n inputs.
 func IsSupportedInputCount(n int) bool {
@@ -125,7 +125,7 @@ func NewCommonPublicInputs(n int) CommonPublicInputs {
 // Prefix returns the common public-input-hash preimage prefix.
 func (p CommonPublicInputs) Prefix(api frontend.API) []frontend.Variable {
 	return []frontend.Variable{
-		gadget.HashChain4(api, p.Nullifiers),
+		gadget.RightHashChain4(api, p.Nullifiers),
 		p.OutputHash,
 		transaction.TreeSlotsHashChain(api, p.TreeSlots),
 		p.OutputTreeID,
@@ -197,10 +197,13 @@ func (t Transaction) Constrain(api frontend.API) (Derived, error) {
 	nullifierPk := gadget.PoseidonHash(api, []frontend.Variable{t.UserNullifierSecret})
 	api.AssertIsEqual(t.UserNullifierPk, nullifierPk)
 	api.AssertIsBoolean(t.Public.AllowDummyInputs)
+	isCompact := transaction.CompactSlots(api, t.Public.Nullifiers)
 	for i := range t.Inputs {
+		// Compact padding (nullifier 0) inserts nothing, so the gate does not
+		// apply to it.
 		isDummy := api.IsZero(api.Sub(t.Inputs[i].Domain, DummyDomain))
 		api.AssertIsEqual(
-			api.Mul(api.Sub(1, t.Public.AllowDummyInputs), isDummy),
+			api.Mul(api.Sub(1, t.Public.AllowDummyInputs), api.Sub(isDummy, isCompact[i])),
 			0,
 		)
 	}
@@ -221,10 +224,10 @@ func (t Transaction) Constrain(api frontend.API) (Derived, error) {
 	for i := range t.Inputs {
 		tree := transaction.SelectTreeSlot(api, t.Inputs[i].TreeSlot, t.Public.TreeSlots, false)
 		api.AssertIsDifferent(tree.UtxoRoot, 0)
-		inputHashes[i], nullifiers[i] = constrainInput(api, t.Inputs[i], ctx, tree, i)
+		inputHashes[i], nullifiers[i] = constrainInput(api, t.Inputs[i], ctx, tree, i, isCompact[i])
 		ctx.FirstNullifier = nullifiers[0]
 	}
-	transaction.AssertDistinctNullifiers(api, nullifiers)
+	transaction.AssertDistinctNullifiers(api, nullifiers, isCompact)
 
 	sumInputs := frontend.Variable(0)
 	for i := range t.Inputs {
@@ -253,7 +256,6 @@ func (t Transaction) Constrain(api frontend.API) (Derived, error) {
 		inputHashes,
 		[]frontend.Variable{outputHash},
 		addressNullifiers,
-		t.Public.ExternalDataHash,
 		transaction.DerivePrivateTxBlinding(api, nullifiers[0], t.UserNullifierSecret),
 	)
 	api.AssertIsEqual(privateTxHash, t.Public.PrivateTxHash)

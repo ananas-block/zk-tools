@@ -35,7 +35,7 @@ const (
 // defaultFixtureInputs is the merge shape the fixtures build. Every supported
 // count shares the same per-slot constraints; the wider shapes are covered by
 // the compile smoke test and their own proving keys.
-const defaultFixtureInputs = 8
+const defaultFixtureInputs = 24
 
 type mergeFixtureOptions struct {
 	inputCount        int
@@ -348,7 +348,6 @@ func buildMergeFixture(t testing.TB, options mergeFixtureOptions) *mergeWitnessF
 		inputHashChainInputs,
 		[]*big.Int{outHash},
 		addressNullifiers,
-		externalDataHash,
 		privateTxBlinding,
 	)
 	if err != nil {
@@ -401,7 +400,7 @@ func buildMergeFixture(t testing.TB, options mergeFixtureOptions) *mergeWitnessF
 	outputTreeID := big.NewInt(fixtureOutputTreeID)
 	treeSlots := fixtureTreeSlots(treeIDs, slotRoots, slotNullifierRoots)
 	publicInputPreimage := []*big.Int{
-		hashChain4(t, pubNullifiers),
+		spptest.MustRightHashChain4(t, pubNullifiers),
 		outHash,
 		spptest.MustTreeSlotsHashChain(t, treeSlots),
 		outputTreeID,
