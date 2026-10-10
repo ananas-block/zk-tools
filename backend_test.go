@@ -519,7 +519,8 @@ func TestRequiredRequestFields(t *testing.T) {
 	}
 }
 
-func TestMergeFixture(t *testing.T) {
+// mergeFixtureRequest is the merge fixture as the structured prover request.
+func mergeFixtureRequest(t *testing.T) string {
 	assignment := buildWitness(t, true)
 	asInteger := func(value frontend.Variable) *big.Int { return value.(*big.Int) }
 	asIntegers := func(values []frontend.Variable) []*big.Int {
@@ -561,11 +562,49 @@ func TestMergeFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	system := compileCircuit(t, assignment)
-	assignment = buildWitness(t, true)
-	compareWitnesses(t, system, string(encoded), assignment, "")
+	return string(encoded)
+}
+
+func TestMergeFixture(t *testing.T) {
+	request := mergeFixtureRequest(t)
+	// Compiling takes the assignment over, so compare with a fresh one.
+	system := compileCircuit(t, buildWitness(t, true))
+	compareWitnesses(t, system, request, buildWitness(t, true), "")
 	if !testing.Short() {
-		proveFixture(t, system, string(encoded), 24, 1)
+		proveFixture(t, system, request, 24, 1)
+	}
+}
+
+// A default merge is one circuit for both owner rails: its key carries the
+// P-256 constraints, and the device proves it.
+func TestMergeKeyFileContainer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("groth16 setup of the merge fixture circuit")
+	}
+	request := mergeFixtureRequest(t)
+	system := compileCircuit(t, buildWitness(t, true))
+	pk, vk, err := groth16.Setup(system)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prover := &preparedProver{cs: system, pk: pk.(*native.ProvingKey), vk: vk.(*native.VerifyingKey)}
+	path := filepath.Join(t.TempDir(), "merge_24_1.key")
+	writeKeyFile(t, path, [3]uint32{24, 1, 1}, prover, nil)
+	handle, err := loadPreparedKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := provePrepared(handle, request)
+	if err != nil || !result.shapeKnown || result.inputs != 24 || result.outputs != 1 {
+		t.Fatal("merge container proof failed", err)
+	}
+	if valid, err := verifyPrepared(handle, result.proof, result.publicInputs); err != nil || !valid {
+		t.Fatal("merge container proof did not verify")
+	}
+	releasePrepared(handle)
+	writeKeyFile(t, path, [3]uint32{24, 1, 2}, prover, nil)
+	if _, err := loadPreparedKey(path); err != errKey {
+		t.Fatal("unknown rail flag accepted")
 	}
 }
 

@@ -238,6 +238,19 @@ func buildRequestWitness(input string, circuit *csbn254.R1CS) (witness.Witness, 
 	return full, nil
 }
 
+// isMergeCircuit reports whether circuit is a merge: one output hash, named
+// as the merge circuits name it (see circuitShape).
+func isMergeCircuit(circuit *csbn254.R1CS) bool {
+	for _, group := range [][]string{circuit.Public, circuit.Secret} {
+		for _, name := range group {
+			if name == "OutputHash" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func circuitShape(circuit *csbn254.R1CS) (uint32, uint32, bool) {
 	names := make(map[string]bool, len(circuit.Public)+len(circuit.Secret))
 	for _, group := range [][]string{circuit.Public, circuit.Secret} {

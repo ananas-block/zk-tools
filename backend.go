@@ -229,8 +229,8 @@ func readKeyFile(path string) (*preparedProver, error) {
 	}
 	inputs := binary.BigEndian.Uint32(header[0:4])
 	outputs := binary.BigEndian.Uint32(header[4:8])
-	// Only the Solana-only (eddsa) rails are proved on device.
-	if binary.BigEndian.Uint32(header[8:12]) != 0 {
+	requiresP256 := binary.BigEndian.Uint32(header[8:12])
+	if requiresP256 > 1 {
 		return nil, errKey
 	}
 	prover := &preparedProver{
@@ -255,6 +255,12 @@ func readKeyFile(path string) (*preparedProver, error) {
 	}
 	if shapeInputs, shapeOutputs, known := circuitShape(prover.cs); !known ||
 		shapeInputs != inputs || shapeOutputs != outputs {
+		return nil, errKey
+	}
+	// Transfers are proved on device on the Solana-only (eddsa) rail. A
+	// default merge is one circuit for both owner rails, so its key carries
+	// the P-256 constraints.
+	if requiresP256 == 1 && !isMergeCircuit(prover.cs) {
 		return nil, errKey
 	}
 	return prover, nil
