@@ -37,9 +37,9 @@ import (
 
 	gnarklogger "github.com/consensys/gnark/logger"
 
-	"zolana/prover/prover/common"
-	mergeprover "zolana/prover/prover/merge"
-	transfereddsaonly "zolana/prover/prover/transfer_eddsa_only"
+	"github.com/helius-labs/zolana/prover/server/prover/common"
+	mergeprover "github.com/helius-labs/zolana/prover/server/prover/merge"
+	transfereddsaonly "github.com/helius-labs/zolana/prover/server/prover/transfer_eddsa_only"
 )
 
 // registry replaces common.LazyKeyManager. Keys are keyed exactly as

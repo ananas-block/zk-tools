@@ -12,11 +12,11 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	native "github.com/consensys/gnark/backend/groth16/bn254"
 	cs "github.com/consensys/gnark/constraint/bn254"
+	"github.com/helius-labs/zolana/prover/server/prover/common"
+	transfer "github.com/helius-labs/zolana/prover/server/prover/transfer_eddsa_only"
 	"math/big"
 	"os"
 	"testing"
-	"zolana/prover/prover/common"
-	transfer "zolana/prover/prover/transfer_eddsa_only"
 )
 
 // Exercise accelerated proof orchestration independently of the browser ABI.
