@@ -1,0 +1,5 @@
+*.key
+*.wasm
+*.a
+*.h
+dist/

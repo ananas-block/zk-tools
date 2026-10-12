@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.1
+          cache-dependency-path: |
+            go.sum
+            cgo/go.sum
+      - run: go vet ./... && go test ./...
+      - run: GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/zolana-prover.wasm ./prover-wasm
+      - run: cd cgo && go vet ./... && go test ./...
+      - run: cd cgo && CGO_ENABLED=1 go build -buildmode=c-archive -o /tmp/libgnark.a .
+  upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash scripts/check-upstream.sh
