@@ -23,10 +23,10 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/logger"
+	"github.com/helius-labs/zolana/prover/server/prover/common"
+	mergeprover "github.com/helius-labs/zolana/prover/server/prover/merge"
+	transfer "github.com/helius-labs/zolana/prover/server/prover/transfer_eddsa_only"
 	"github.com/rs/zerolog"
-	"zolana/prover/prover/common"
-	mergeprover "zolana/prover/prover/merge"
-	transfer "zolana/prover/prover/transfer_eddsa_only"
 )
 
 const sentinel = "PRIVATE_SENTINEL_894713"

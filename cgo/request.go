@@ -14,9 +14,9 @@ import (
 	csbn254 "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/schema"
-	"zolana/prover/prover/common"
-	merge "zolana/prover/prover/merge"
-	transfer "zolana/prover/prover/transfer_eddsa_only"
+	"github.com/helius-labs/zolana/prover/server/prover/common"
+	merge "github.com/helius-labs/zolana/prover/server/prover/merge"
+	transfer "github.com/helius-labs/zolana/prover/server/prover/transfer_eddsa_only"
 )
 
 type requestParameters interface {

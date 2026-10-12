@@ -8,7 +8,7 @@ import (
 	"github.com/consensys/gnark/backend/witness"
 	cs "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/frontend"
-	"zolana/prover/prover/common"
+	"github.com/helius-labs/zolana/prover/server/prover/common"
 )
 
 // Adapt Mopro's prepared arithmetic bridge to Zolana's bundled proving system.

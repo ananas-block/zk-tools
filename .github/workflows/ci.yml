@@ -23,8 +23,3 @@ jobs:
       - run: GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/zolana-prover.wasm ./prover-wasm
       - run: cd cgo && go vet ./... && go test ./...
       - run: cd cgo && CGO_ENABLED=1 go build -buildmode=c-archive -o /tmp/libgnark.a .
-  upstream:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - run: bash scripts/check-upstream.sh

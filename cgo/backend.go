@@ -22,7 +22,7 @@ import (
 	csbn254 "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/logger"
 	_ "github.com/consensys/gnark/std/rangecheck"
-	"zolana/prover/prover/common"
+	"github.com/helius-labs/zolana/prover/server/prover/common"
 )
 
 var (
