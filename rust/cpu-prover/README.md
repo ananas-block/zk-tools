@@ -23,13 +23,14 @@ Production proving draws fresh nonzero `r` and `s` through fallible OS/browser e
 ## Checks
 
 ```sh
+cargo test --locked --release
 cargo test --locked --release --features setup
 cargo test --locked --release --features setup,parallel
 wasm-pack test --node --release . --locked --features wasm-prover,test-support
 RUSTFLAGS='-C target-feature=+simd128' wasm-pack test --node --release . --locked --features wasm-prover,test-support
 ```
 
-The security gate checks all three Groth16 blinding equations against independently computed group operations, changes each randomizer separately, checks production entropy refreshes both randomizers, and rejects failed/zero/noncanonical entropy. A 64-case proof property test compares with the arkworks prover using an independent ordinary-FFT quotient transform. These checks support correctness; they are not a formal zero-knowledge proof or side-channel audit. Kernels use variable-time algorithms.
+The security and proof-equivalence gates run in default native `cargo test` builds, with no test-setup feature required. The security gate checks all three Groth16 blinding equations against independently computed group operations, changes each randomizer separately, checks production entropy refreshes both randomizers, and rejects failed/zero/noncanonical entropy. A 64-case proof property test compares with the arkworks prover using an independent ordinary-FFT quotient transform. These checks support correctness; they are not a formal zero-knowledge proof or side-channel audit. Kernels use variable-time algorithms.
 
 Standalone WASM tests load the committed fixture key, verify fresh proofs with the reference verifier, compare with native reference proof bytes under fixed blinding, reject malformed assignments/keys and failed blinding, and exercise scalar, pairing and real SIMD kernels. Node exercises the actual WASM binary; multi-engine browser tests and physical-device release checks remain in the DSL integration suite.
 

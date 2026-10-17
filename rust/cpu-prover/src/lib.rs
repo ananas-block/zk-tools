@@ -217,7 +217,7 @@ impl Prover {
     }
 }
 
-#[cfg(all(test, feature = "setup", not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod security_tests;
 
 #[cfg(all(

@@ -11,7 +11,11 @@
       "ignoredFixtureGenerator": 1
     },
     "proofEquivalencePropertyCases": 64,
-    "blindingScalars": "full-field randomized; boundary equations tested separately"
+    "blindingScalars": "full-field randomized; boundary equations tested separately",
+    "default": {
+      "passed": 26,
+      "securityAndProofEquivalenceIncluded": true
+    }
   },
   "standaloneWasm": {
     "runtime": "Node.js",

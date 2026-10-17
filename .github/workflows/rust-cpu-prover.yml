@@ -20,6 +20,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: rustup update stable --no-self-update
       - run: cargo fmt --check
+      - name: Default-feature proof blinding and equivalence gates
+        if: matrix.features == 'setup'
+        run: cargo test --locked --release
       - run: cargo test --locked --release --features '${{ matrix.features }}'
   wasm:
     runs-on: ubuntu-24.04

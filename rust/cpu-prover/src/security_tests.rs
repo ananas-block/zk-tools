@@ -100,6 +100,19 @@ impl R1CSToQAP for ReferenceReduction {
     }
 }
 
+fn product_matrices() -> R1csMatrices {
+    R1csMatrices::new(
+        [
+            vec![vec![(Fr::one(), 2)]; ROWS],
+            vec![vec![(Fr::one(), 3)]; ROWS],
+            vec![vec![(Fr::one(), 1)]; ROWS],
+        ],
+        2,
+        2,
+        ROWS,
+    )
+}
+
 struct Fixture {
     keys: Arc<Keys>,
     prover: Prover,
@@ -107,11 +120,9 @@ struct Fixture {
 fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
     FIXTURE.get_or_init(|| {
-        let a = vec![vec![(Fr::one(), 2)]; ROWS];
-        let b = vec![vec![(Fr::one(), 3)]; ROWS];
-        let c = vec![vec![(Fr::one(), 1)]; ROWS];
-        let matrices = R1csMatrices::new([a, b, c], 2, 2, ROWS);
-        let keys = Arc::new(Keys::with_insecure_test_setup(&matrices).unwrap());
+        let matrices = product_matrices();
+        let keys =
+            Arc::new(Keys::from_bytes(include_bytes!("../tests/fixtures/product.pk")).unwrap());
         let matrices = Arc::new(PreparedMatrices::new(matrices).unwrap());
         let prover = Prover::new(Arc::clone(&keys), matrices).unwrap();
         Fixture { keys, prover }
@@ -312,21 +323,26 @@ proptest! {
 }
 
 /// Regenerate the explicitly insecure browser test key and reference proofs.
+#[cfg(feature = "setup")]
 #[test]
 #[ignore = "fixture generator; run explicitly when changing the test circuit"]
 fn write_wasm_fixtures() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(
-        directory.join("product.pk"),
-        fixture().keys.to_bytes().unwrap(),
-    )
-    .unwrap();
+    let keys = Keys::with_insecure_test_setup(&product_matrices()).unwrap();
+    std::fs::write(directory.join("product.pk"), keys.to_bytes().unwrap()).unwrap();
     let (x, y) = (Fr::from(7u64), Fr::from(11u64));
     for (name, r, s) in [
         ("product.fixed-proof", Fr::from(13u64), Fr::from(19u64)),
         ("product.zero-proof", Fr::zero(), Fr::zero()),
     ] {
-        std::fs::write(directory.join(name), bytes(reference(x, y, r, s))).unwrap();
+        let proof = Groth16::<Bn254, ReferenceReduction>::create_proof_with_reduction(
+            Product { x, y },
+            keys.proving_key(),
+            r,
+            s,
+        )
+        .unwrap();
+        std::fs::write(directory.join(name), bytes(proof)).unwrap();
     }
 }
