@@ -1,4 +1,5 @@
 use super::*;
+use crate::VerifyingKey;
 use ark_bn254::{G1Affine, G2Affine};
 use ark_ec::AffineRepr;
 fn keys() -> Keys {

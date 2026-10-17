@@ -32,7 +32,7 @@ pub(super) fn c(
         target_feature = "simd128"
     ))]
     {
-        super::curve::finish_c(a, b_unblinded, r, s, l, h)
+        crate::kernels::curve::finish_c(a, b_unblinded, r, s, l, h)
     }
     #[cfg(not(all(
         target_arch = "wasm32",
@@ -45,5 +45,5 @@ pub(super) fn c(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "../tests/unit/proof_finish.rs"]
+#[path = "../../tests/unit/proof_finish.rs"]
 mod tests;

@@ -15,10 +15,10 @@ type Fq2 = Fp2<QuadraticConfig>;
 type Fq6 = Fp6<SexticConfig>;
 #[cfg(any(test, feature = "test-support"))]
 type Fq12 = ark_ff::Fp12<TowerConfig>;
-pub(super) type Engine = Bn<Config>;
-pub(super) type Prepared = ark_groth16::PreparedVerifyingKey<Engine>;
+pub(crate) type Engine = Bn<Config>;
+pub(crate) type Prepared = ark_groth16::PreparedVerifyingKey<Engine>;
 
-pub(super) struct BaseConfig;
+pub(crate) struct BaseConfig;
 impl MontConfig<4> for BaseConfig {
     const MODULUS: BigInt<4> = <ark_bn254::FqConfig as MontConfig<4>>::MODULUS;
     const GENERATOR: Fq = field(<ark_bn254::FqConfig as MontConfig<4>>::GENERATOR);
@@ -35,16 +35,16 @@ impl MontConfig<4> for BaseConfig {
         };
     #[inline(always)]
     fn mul_assign(a: &mut Fq, b: &Fq) {
-        a.0 = super::scalar_field::mont_products([a.0], [b.0], Self::MODULUS, Self::INV as u32);
+        a.0 = super::field::scalar::mont_products([a.0], [b.0], Self::MODULUS, Self::INV as u32);
     }
     #[inline(always)]
     fn square_in_place(a: &mut Fq) {
-        a.0 = super::scalar_field::mont_products([a.0], [a.0], Self::MODULUS, Self::INV as u32);
+        a.0 = super::field::scalar::mont_products([a.0], [a.0], Self::MODULUS, Self::INV as u32);
     }
     #[inline(always)]
     fn sum_of_products<const M: usize>(a: &[Fq; M], b: &[Fq; M]) -> Fq {
         if M == 2 {
-            return Fq::new_unchecked(super::scalar_field::mont_products(
+            return Fq::new_unchecked(super::field::scalar::mont_products(
                 [a[0].0, a[1].0],
                 [b[0].0, b[1].0],
                 Self::MODULUS,
@@ -89,7 +89,7 @@ const fn quadratic_constants<const N: usize>(values: &[ark_bn254::Fq2]) -> [Fq2;
     }
     out
 }
-pub(super) struct QuadraticConfig;
+pub(crate) struct QuadraticConfig;
 impl Fp2Config for QuadraticConfig {
     type Fp = Fq;
     const NONRESIDUE: Fq = field(<ark_bn254::Fq2Config as Fp2Config>::NONRESIDUE);
@@ -101,7 +101,7 @@ impl Fp2Config for QuadraticConfig {
     }
 }
 #[derive(Clone, Copy)]
-pub(super) struct SexticConfig;
+pub(crate) struct SexticConfig;
 impl Fp6Config for SexticConfig {
     type Fp2Config = QuadraticConfig;
     const NONRESIDUE: Fq2 = quadratic(<ark_bn254::Fq6Config as Fp6Config>::NONRESIDUE);
@@ -117,7 +117,7 @@ impl Fp6Config for SexticConfig {
     }
 }
 #[derive(Clone, Copy)]
-pub(super) struct TowerConfig;
+pub(crate) struct TowerConfig;
 impl Fp12Config for TowerConfig {
     type Fp6Config = SexticConfig;
     const NONRESIDUE: Fq6 = sextic(<ark_bn254::Fq12Config as Fp12Config>::NONRESIDUE);
@@ -126,7 +126,7 @@ impl Fp12Config for TowerConfig {
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
-pub(super) struct G1Config;
+pub(crate) struct G1Config;
 impl CurveConfig for G1Config {
     type BaseField = Fq;
     type ScalarField = Fr;
@@ -155,7 +155,7 @@ impl SWCurveConfig for G1Config {
     }
 }
 #[derive(Clone, Default, PartialEq, Eq)]
-pub(super) struct G2Config;
+pub(crate) struct G2Config;
 impl CurveConfig for G2Config {
     type BaseField = Fq2;
     type ScalarField = Fr;
@@ -186,7 +186,7 @@ impl SWCurveConfig for G2Config {
         )
     }
 }
-pub(super) struct Config;
+pub(crate) struct Config;
 impl BnConfig for Config {
     const X: &'static [u64] = <ark_bn254::Config as BnConfig>::X;
     const X_IS_NEGATIVE: bool = <ark_bn254::Config as BnConfig>::X_IS_NEGATIVE;
@@ -207,7 +207,7 @@ fn g1(p: ark_bn254::G1Affine) -> Affine<G1Config> {
 fn g2(p: ark_bn254::G2Affine) -> Affine<G2Config> {
     Affine::new_unchecked(quadratic(p.x), quadratic(p.y))
 }
-pub(super) fn prepare(vk: &ark_groth16::VerifyingKey<ark_bn254::Bn254>) -> Prepared {
+pub(crate) fn prepare(vk: &ark_groth16::VerifyingKey<ark_bn254::Bn254>) -> Prepared {
     ark_groth16::prepare_verifying_key(&ark_groth16::VerifyingKey {
         alpha_g1: g1(vk.alpha_g1),
         beta_g2: g2(vk.beta_g2),
@@ -216,7 +216,7 @@ pub(super) fn prepare(vk: &ark_groth16::VerifyingKey<ark_bn254::Bn254>) -> Prepa
         gamma_abc_g1: vk.gamma_abc_g1.iter().copied().map(g1).collect(),
     })
 }
-pub(super) fn verify(
+pub(crate) fn verify(
     pvk: &Prepared,
     proof: &ark_groth16::Proof<ark_bn254::Bn254>,
     inputs: &[Fr],
@@ -233,7 +233,7 @@ pub(super) fn verify(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "../tests/unit/pairing.rs"]
+#[path = "../../tests/unit/pairing.rs"]
 mod tests;
 
 #[cfg(all(feature = "test-support", feature = "wasm", target_arch = "wasm32"))]

@@ -136,5 +136,5 @@ pub(super) fn decompose<P: Bn254Glv>(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "../tests/unit/glv.rs"]
+#[path = "../../../tests/unit/glv.rs"]
 mod tests;

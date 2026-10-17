@@ -6,7 +6,7 @@ use ark_std::cfg_iter;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use super::matrices::R1csMatrices;
+use super::R1csMatrices;
 
 /// Matrix expressions are immutable. Their values belong to one proof only.
 pub(super) struct CompiledMatrices {
@@ -106,5 +106,5 @@ impl CompiledMatrices {
 }
 
 #[cfg(all(test, feature = "setup", not(target_arch = "wasm32")))]
-#[path = "../tests/unit/compiled_matrices.rs"]
+#[path = "../../tests/unit/compiled_matrices.rs"]
 mod tests;

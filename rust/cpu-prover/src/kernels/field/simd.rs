@@ -1,7 +1,11 @@
 //! Portable SIMD adaptation of delayed-carry Montgomery arithmetic.
 //! Two independent normalized29-bit field values in standard WASM SIMD128.
 //! Products use i64x2.extmul_low_i32x4_u, mapping to native NEON UMULL.
-use super::{Affine, SmallField, F9, F92, MASK, Q};
+use super::{
+    base::{F9, INV, MASK, Q},
+    extension::F92,
+    SmallField,
+};
 use core::{
     arch::wasm32::*,
     ops::{Add, Mul, Sub},
@@ -19,16 +23,16 @@ extern "C" fn extmul(a: v128, b: v128) -> v128 {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct Pair([v128; 9]);
+pub(in crate::kernels) struct Pair([v128; 9]);
 impl Pair {
     #[inline(always)]
-    fn pack(a: F9, b: F9) -> Self {
+    pub(in crate::kernels) fn pack(a: F9, b: F9) -> Self {
         Self(core::array::from_fn(|j| {
             u32x4(a.0[j], b.0[j], a.0[j], b.0[j])
         }))
     }
     #[inline(always)]
-    fn unpack(self) -> (F9, F9) {
+    pub(in crate::kernels) fn unpack(self) -> (F9, F9) {
         (
             F9(self.0.map(|v| u32x4_extract_lane::<0>(v))),
             F9(self.0.map(|v| u32x4_extract_lane::<1>(v))),
@@ -123,7 +127,7 @@ fn montgomery_pair(lhs: Pair, rhs: Pair) -> Pair {
         let lo = i64x2_add(t[0], extmul(a, rhs.0[0]));
         let packed = u32x4_shuffle::<0, 2, 0, 2>(lo, lo);
         let m = v128_and(
-            u32x4_mul(packed, u32x4_splat(super::INV as u32)),
+            u32x4_mul(packed, u32x4_splat(INV as u32)),
             u32x4_splat(MASK as u32),
         );
         let carry = u64x2_shr(i64x2_add(lo, extmul(m, u32x4_splat(Q[0]))), 29);
@@ -227,7 +231,7 @@ fn montgomery_square(lhs: Pair) -> Pair {
         ($i:literal) => {{
             let packed = u32x4_shuffle::<0, 2, 0, 2>(t[$i], t[$i]);
             let m = v128_and(
-                u32x4_mul(packed, u32x4_splat(super::INV as u32)),
+                u32x4_mul(packed, u32x4_splat(INV as u32)),
                 u32x4_splat(MASK as u32),
             );
             let carry = u64x2_shr(i64x2_add(t[$i], extmul(m, u32x4_splat(Q[0]))), 29);
@@ -276,7 +280,9 @@ fn montgomery_square(lhs: Pair) -> Pair {
     Pair(out).reduce_to(Q)
 }
 
-trait Packed: Copy + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> {
+pub(in crate::kernels) trait Packed:
+    Copy + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self>
+{
     #[inline(always)]
     fn square(self) -> Self {
         self * self
@@ -290,20 +296,20 @@ impl Packed for Pair {
     }
 }
 #[derive(Clone, Copy)]
-struct Complex {
+pub(in crate::kernels) struct Complex {
     c0: Pair,
     c1: Pair,
 }
 impl Complex {
     #[inline(always)]
-    fn pack(a: F92, b: F92) -> Self {
+    pub(in crate::kernels) fn pack(a: F92, b: F92) -> Self {
         Self {
             c0: Pair::pack(a.c0, b.c0),
             c1: Pair::pack(a.c1, b.c1),
         }
     }
     #[inline(always)]
-    fn unpack(self) -> (F92, F92) {
+    pub(in crate::kernels) fn unpack(self) -> (F92, F92) {
         let (a, b) = self.c0.unpack();
         let (c, d) = self.c1.unpack();
         (F92 { c0: a, c1: c }, F92 { c0: b, c1: d })
@@ -350,73 +356,6 @@ impl Packed for Complex {
             c1: ab + ab,
         }
     }
-}
-#[inline(always)]
-fn affine_formula<P: Packed>(ax: P, ay: P, bx: P, by: P, inverse: P) -> (P, P) {
-    let slope = (by - ay) * inverse;
-    let x = slope.square() - ax - bx;
-    let y = slope * (ax - x) - ay;
-    (x, y)
-}
-pub(super) fn affine_g1(
-    a0: Affine<F9>,
-    b0: Affine<F9>,
-    i0: F9,
-    a1: Affine<F9>,
-    b1: Affine<F9>,
-    i1: F9,
-) -> (Affine<F9>, Affine<F9>) {
-    let (x, y) = affine_formula(
-        Pair::pack(a0.x, a1.x),
-        Pair::pack(a0.y, a1.y),
-        Pair::pack(b0.x, b1.x),
-        Pair::pack(b0.y, b1.y),
-        Pair::pack(i0, i1),
-    );
-    let (x0, x1) = x.unpack();
-    let (y0, y1) = y.unpack();
-    (
-        Affine {
-            x: x0,
-            y: y0,
-            infinity: false,
-        },
-        Affine {
-            x: x1,
-            y: y1,
-            infinity: false,
-        },
-    )
-}
-pub(super) fn affine_g2(
-    a0: Affine<F92>,
-    b0: Affine<F92>,
-    i0: F92,
-    a1: Affine<F92>,
-    b1: Affine<F92>,
-    i1: F92,
-) -> (Affine<F92>, Affine<F92>) {
-    let (x, y) = affine_formula(
-        Complex::pack(a0.x, a1.x),
-        Complex::pack(a0.y, a1.y),
-        Complex::pack(b0.x, b1.x),
-        Complex::pack(b0.y, b1.y),
-        Complex::pack(i0, i1),
-    );
-    let (x0, x1) = x.unpack();
-    let (y0, y1) = y.unpack();
-    (
-        Affine {
-            x: x0,
-            y: y0,
-            infinity: false,
-        },
-        Affine {
-            x: x1,
-            y: y1,
-            infinity: false,
-        },
-    )
 }
 #[inline(always)]
 pub(super) fn multiply_pair(a: F9, b: F9, c: F9, d: F9) -> (F9, F9) {

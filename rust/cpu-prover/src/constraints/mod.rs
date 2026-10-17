@@ -1,4 +1,7 @@
-use crate::{compiled_matrices::CompiledMatrices, Error};
+mod compiled;
+
+use self::compiled::CompiledMatrices;
+use crate::Error;
 use ark_bn254::Fr;
 use ark_ff::One;
 #[cfg(feature = "setup")]

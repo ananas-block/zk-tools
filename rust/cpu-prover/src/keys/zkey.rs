@@ -3,11 +3,8 @@ use ark_ec::AffineRepr;
 use ark_ff::{BigInt, One, PrimeField, Zero};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 
-use super::{
-    matrices::R1csMatrices,
-    {ProvingKey, VerifyingKey},
-};
 use crate::Error;
+use crate::{ProvingKey, R1csMatrices, VerifyingKey};
 
 const G1_BYTES: usize = 64;
 const G2_BYTES: usize = 128;

@@ -1,5 +1,6 @@
 //! Release gates for proof correctness and zero-knowledge blinding.
 use super::*;
+use crate::{CircomReduction, R1csMatrices};
 use ark_bn254::Bn254;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, One, PrimeField, Zero};

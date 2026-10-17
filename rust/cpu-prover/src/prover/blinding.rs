@@ -27,5 +27,5 @@ pub(crate) fn proof_randomizers_with(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "../tests/unit/randomness.rs"]
+#[path = "../../tests/unit/blinding.rs"]
 mod randomness_tests;

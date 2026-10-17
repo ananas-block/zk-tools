@@ -20,6 +20,16 @@ Existing canonical key bytes and snarkjs ceremony zkeys are supported. zkey impo
 
 Production proving draws fresh nonzero `r` and `s` through fallible OS/browser entropy and canonical rejection sampling. Entropy failure, zero scalars and a bounded run of noncanonical draws reject the proof. Explicit blinding exists only behind `test-support`. The `setup` feature's deterministic setup and the committed test keys are **insecure fixtures**, unsuitable for production.
 
+Implementation layout:
+
+- `prover/`: proof orchestration, assembly, finishing and secure blinding.
+- `keys/`: prepared key ownership, canonical encoding and zkey decoding.
+- `constraints/`: R1CS matrices and reusable expression plans.
+- `kernels/field/` and `kernels/curve/`: field arithmetic, SIMD lanes, point operations and GLV.
+- `kernels/msm.rs` and `kernels/msm/`: native and prepared affine MSM implementations.
+- `kernels/fft/` and `kernels/pairing.rs`: quotient transforms and verification arithmetic.
+- `wasm_build.rs`: compiler/optimizer contract, exposed through the existing `build` module.
+
 ## Checks
 
 ```sh

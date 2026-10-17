@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 pub struct CircomReduction;
 
-mod coset_fft;
+mod coset;
 
 type QapInstance<F> = (Vec<F>, Vec<F>, Vec<F>, F, usize, usize);
 
@@ -100,11 +100,11 @@ impl CircomReduction {
         let odd_coset_shift = D::new(2 * domain_size)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?
             .element(1);
-        let plan = coset_fft::plan::<F, D>(&domain, odd_coset_shift)?;
+        let plan = coset::plan::<F, D>(&domain, odd_coset_shift)?;
         let transform = |evaluations: &mut Vec<F>| plan.transform(evaluations);
-        super::proof::join(
+        super::join(
             || transform(&mut a),
-            || super::proof::join(|| transform(&mut b), || transform(&mut c)),
+            || super::join(|| transform(&mut b), || transform(&mut c)),
         );
 
         let mut ab = domain.mul_polynomials_in_evaluation_domain(&a, &b);
@@ -126,5 +126,5 @@ fn evaluate<F: PrimeField>(row: &[(F, usize)], assignment: &[F]) -> Result<F, Sy
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "../tests/unit/reduction.rs"]
+#[path = "../../../tests/unit/fft.rs"]
 mod tests;

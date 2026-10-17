@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+#[path = "six_step.rs"]
 mod six_step;
 
 struct Stage<F> {

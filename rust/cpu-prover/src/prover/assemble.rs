@@ -1,21 +1,5 @@
 use ark_bn254::{Fr, G1Projective, G2Projective};
-#[cfg(not(all(
-    target_arch = "wasm32",
-    feature = "wasm-prover",
-    target_feature = "simd128"
-)))]
-use ark_ec::VariableBaseMSM;
 use ark_ec::{AffineRepr, CurveGroup};
-#[cfg(all(
-    feature = "parallel",
-    target_family = "wasm",
-    not(all(
-        target_arch = "wasm32",
-        feature = "wasm-prover",
-        target_feature = "simd128"
-    ))
-))]
-use ark_ff::BigInteger;
 use ark_ff::{BigInteger256, PrimeField};
 use ark_poly::GeneralEvaluationDomain;
 use ark_relations::gr1cs::SynthesisError;
@@ -23,12 +7,15 @@ use ark_std::cfg_iter;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use super::reduction::CircomReduction;
-use super::{
-    matrices::R1csMatrices,
-    {Proof, ProvingKey},
-};
+#[cfg(not(all(
+    target_arch = "wasm32",
+    feature = "wasm-prover",
+    target_feature = "simd128"
+)))]
+use crate::kernels::msm::{msm, query_msm};
+use crate::kernels::{fft::CircomReduction, join};
 use crate::Error;
+use crate::{Proof, ProvingKey, R1csMatrices};
 
 pub(crate) fn create_proof(
     proving_key: &ProvingKey,
@@ -42,7 +29,7 @@ pub(crate) fn create_proof(
         feature = "wasm-prover",
         target_feature = "simd128"
     ))]
-    prepared: &super::curve::PreparedKey,
+    prepared: &crate::kernels::msm::PreparedKey,
 ) -> Result<Proof, Error> {
     let num_inputs = matrices.num_instance_variables;
     let (h_scalars, scalars) = prepare_scalars(matrices, full_assignment, evaluations)?;
@@ -142,17 +129,17 @@ pub(super) fn prepare_scalars(
         let inputs: Vec<_> = inputs
             .iter()
             .copied()
-            .map(super::scalar_field::from_ark)
+            .map(crate::kernels::field::scalar::from_ark)
             .collect();
         let evaluations = evaluations.map(|values| {
             values
                 .into_iter()
-                .map(super::scalar_field::from_ark)
+                .map(crate::kernels::field::scalar::from_ark)
                 .collect()
         });
         CircomReduction::witness_map_from_evaluations::<
-            super::scalar_field::Scalar,
-            GeneralEvaluationDomain<super::scalar_field::Scalar>,
+            crate::kernels::field::scalar::Scalar,
+            GeneralEvaluationDomain<crate::kernels::field::scalar::Scalar>,
         >(evaluations, num_inputs, matrices.num_constraints, &inputs)?
     };
     let (h_scalars, scalars) = join(|| bigints(&h), || bigints(full_assignment));
@@ -174,7 +161,7 @@ pub(super) fn finish_proof(
     let delta_r = proving_key.delta_g1 * r;
     let g_a = delta_r + first(&proving_key.a_query)? + a_acc? + vk.alpha_g1;
 
-    let g1_b = super::proof_finish::unblinded_b(
+    let g1_b = super::finish::unblinded_b(
         r,
         &proving_key.b_g1_query,
         b_g1_acc,
@@ -185,7 +172,7 @@ pub(super) fn finish_proof(
     let delta_s = vk.delta_g2 * s;
     let g2_b = delta_s + first(&proving_key.b_g2_query)? + b_g2_acc? + vk.beta_g2;
 
-    let g_c = super::proof_finish::c(g_a, g1_b, r, s, l_aux_acc, h_acc);
+    let g_c = super::finish::c(g_a, g1_b, r, s, l_aux_acc, h_acc);
     Ok(Proof {
         a: g_a.into_affine(),
         b: g2_b.into_affine(),
@@ -211,75 +198,4 @@ fn first<G: AffineRepr>(query: &[G]) -> Result<G, Error> {
         .first()
         .copied()
         .ok_or(Error::Internal(SynthesisError::AssignmentMissing))?)
-}
-
-#[cfg(not(all(
-    target_arch = "wasm32",
-    feature = "wasm-prover",
-    target_feature = "simd128"
-)))]
-pub(super) fn query_msm<G>(query: &[G], assignment: &[BigInteger256]) -> Result<G::Group, Error>
-where
-    G: AffineRepr<ScalarField = Fr>,
-    G::Group: VariableBaseMSM<MulBase = G>,
-{
-    let bases = query.get(1..).ok_or(SynthesisError::AssignmentMissing)?;
-    Ok(msm::<G::Group>(bases, assignment))
-}
-
-#[cfg(not(all(feature = "parallel", target_family = "wasm")))]
-#[cfg(not(all(
-    target_arch = "wasm32",
-    feature = "wasm-prover",
-    target_feature = "simd128"
-)))]
-fn msm<G>(bases: &[G::MulBase], scalars: &[BigInteger256]) -> G
-where
-    G: VariableBaseMSM<ScalarField = Fr>,
-{
-    G::msm_bigint(bases, scalars)
-}
-
-#[cfg(all(feature = "parallel", target_family = "wasm"))]
-#[cfg(not(all(
-    target_arch = "wasm32",
-    feature = "wasm-prover",
-    target_feature = "simd128"
-)))]
-fn msm<G>(bases: &[G::MulBase], scalars: &[BigInteger256]) -> G
-where
-    G: VariableBaseMSM<ScalarField = Fr>,
-{
-    (0..BigInteger256::NUM_LIMBS)
-        .rev()
-        .fold(G::zero(), |mut sum, limb| {
-            for _ in 0..u64::BITS {
-                sum.double_in_place();
-            }
-            let limbs: Vec<u64> = scalars
-                .par_iter()
-                .map(|scalar| scalar.0.get(limb).copied().unwrap_or_default())
-                .collect();
-            sum + G::msm_u64(bases, &limbs)
-        })
-}
-
-#[cfg(feature = "parallel")]
-pub(crate) fn join<A, B, RA, RB>(a: A, b: B) -> (RA, RB)
-where
-    A: FnOnce() -> RA + Send,
-    B: FnOnce() -> RB + Send,
-    RA: Send,
-    RB: Send,
-{
-    rayon::join(a, b)
-}
-
-#[cfg(not(feature = "parallel"))]
-pub(crate) fn join<A, B, RA, RB>(a: A, b: B) -> (RA, RB)
-where
-    A: FnOnce() -> RA,
-    B: FnOnce() -> RB,
-{
-    (a(), b())
 }

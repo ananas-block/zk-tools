@@ -2,9 +2,9 @@
 //! The mixed29/24-bit radix preserves arkworks Montgomery R=2^256.
 use ark_bn254::Fr;
 use ark_ff::{BigInt, Fp, MontBackend, MontConfig};
-pub(super) type Scalar = Fp<MontBackend<FrConfig, 4>, 4>;
+pub(crate) type Scalar = Fp<MontBackend<FrConfig, 4>, 4>;
 
-pub(super) struct FrConfig;
+pub(crate) struct FrConfig;
 
 impl MontConfig<4> for FrConfig {
     const MODULUS: BigInt<4> = <ark_bn254::FrConfig as MontConfig<4>>::MODULUS;
@@ -42,7 +42,7 @@ impl MontConfig<4> for FrConfig {
     }
 }
 
-pub(super) const fn from_ark(value: Fr) -> Scalar {
+pub(crate) const fn from_ark(value: Fr) -> Scalar {
     Scalar::new_unchecked(value.0)
 }
 
@@ -137,7 +137,7 @@ const fn split29(a: BigInt<4>) -> [u64; 9] {
 }
 
 #[inline(always)]
-pub(super) fn mont_products<const M: usize>(
+pub(crate) fn mont_products<const M: usize>(
     a: [BigInt<4>; M],
     b: [BigInt<4>; M],
     modulus: BigInt<4>,
@@ -208,5 +208,5 @@ pub(super) fn mont_products<const M: usize>(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "../tests/unit/scalar_field.rs"]
+#[path = "../../../tests/unit/scalar_field.rs"]
 mod tests;
