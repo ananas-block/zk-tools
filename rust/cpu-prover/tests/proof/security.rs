@@ -121,8 +121,7 @@ fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
     FIXTURE.get_or_init(|| {
         let matrices = product_matrices();
-        let keys =
-            Arc::new(Keys::from_bytes(include_bytes!("../tests/fixtures/product.pk")).unwrap());
+        let keys = Arc::new(Keys::from_bytes(include_bytes!("../fixtures/product.pk")).unwrap());
         let matrices = Arc::new(PreparedMatrices::new(matrices).unwrap());
         let prover = Prover::new(Arc::clone(&keys), matrices).unwrap();
         Fixture { keys, prover }

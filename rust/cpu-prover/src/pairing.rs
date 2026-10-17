@@ -233,7 +233,7 @@ pub(super) fn verify(
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[path = "pairing_tests.rs"]
+#[path = "../tests/unit/pairing.rs"]
 mod tests;
 
 #[cfg(all(feature = "test-support", feature = "wasm", target_arch = "wasm32"))]

@@ -1,4 +1,4 @@
-//! Portable SIMD adaptation of delayed-carry Montgomery arithmetic; see THIRD_PARTY_NOTICES.
+//! Portable SIMD adaptation of delayed-carry Montgomery arithmetic.
 //! Two independent normalized29-bit field values in standard WASM SIMD128.
 //! Products use i64x2.extmul_low_i32x4_u, mapping to native NEON UMULL.
 use super::{Affine, SmallField, F9, F92, MASK, Q};

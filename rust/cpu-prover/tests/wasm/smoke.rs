@@ -10,7 +10,7 @@ fn fixture() -> (Prover, Arc<Keys>) {
     let b = vec![vec![(Fr::one(), 3)]; 8];
     let c = vec![vec![(Fr::one(), 1)]; 8];
     let matrices = Arc::new(PreparedMatrices::new(R1csMatrices::new([a, b, c], 2, 2, 8)).unwrap());
-    let keys = Arc::new(Keys::from_bytes(include_bytes!("../tests/fixtures/product.pk")).unwrap());
+    let keys = Arc::new(Keys::from_bytes(include_bytes!("../fixtures/product.pk")).unwrap());
     (Prover::new(Arc::clone(&keys), matrices).unwrap(), keys)
 }
 fn assignment() -> [Fr; 4] {
@@ -22,14 +22,14 @@ fn encoded(value: impl CanonicalSerialize) -> Vec<u8> {
     bytes
 }
 fn plain() -> Proof {
-    Proof::deserialize_compressed(include_bytes!("../tests/fixtures/product.zero-proof").as_slice())
+    Proof::deserialize_compressed(include_bytes!("../fixtures/product.zero-proof").as_slice())
         .unwrap()
 }
 
 #[wasm_bindgen_test]
 fn wasm_keys_validate_checksum_and_encoding() {
     use sha2::{Digest, Sha256};
-    let bytes = include_bytes!("../tests/fixtures/product.pk");
+    let bytes = include_bytes!("../fixtures/product.pk");
     assert!(Keys::from_bytes_checked(bytes, &Sha256::digest(bytes).into()).is_ok());
     assert!(matches!(
         Keys::from_bytes_checked(bytes, &[0; 32]),
@@ -90,7 +90,7 @@ fn wasm_fixed_blinding_matches_independent_native_proof() {
     assert!(draws.next().is_none());
     assert_eq!(
         encoded(proof),
-        include_bytes!("../tests/fixtures/product.fixed-proof")
+        include_bytes!("../fixtures/product.fixed-proof")
     );
 }
 

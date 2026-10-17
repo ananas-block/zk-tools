@@ -6,4 +6,4 @@ Arithmetic, GLV, pairing verification, FFT, MSM and proof assembly were moved wi
 
 New security and WASM tests accompany the extraction. The committed product key and reference proofs are intentionally insecure test fixtures. No WebGPU source is part of this crate; the separate experiment is maintained in Aeglos.
 
-Imported code remains Apache-2.0. Arithmetic reference attribution is retained in `THIRD_PARTY_NOTICES`.
+Imported code remains Apache-2.0.

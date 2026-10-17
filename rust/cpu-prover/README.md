@@ -30,6 +30,8 @@ wasm-pack test --node --release . --locked --features wasm-prover,test-support
 RUSTFLAGS='-C target-feature=+simd128' wasm-pack test --node --release . --locked --features wasm-prover,test-support
 ```
 
+Test bodies live under `tests/unit/`, `tests/proof/` and `tests/wasm/`; shared keys and reference proofs live in `tests/fixtures/`. Private-kernel tests are compiled through conditional module declarations, so they do not require extra public APIs.
+
 The security and proof-equivalence gates run in default native `cargo test` builds, with no test-setup feature required. The security gate checks all three Groth16 blinding equations against independently computed group operations, changes each randomizer separately, checks production entropy refreshes both randomizers, and rejects failed/zero/noncanonical entropy. A 64-case proof property test compares with the arkworks prover using an independent ordinary-FFT quotient transform. These checks support correctness; they are not a formal zero-knowledge proof or side-channel audit. Kernels use variable-time algorithms.
 
 Standalone WASM tests load the committed fixture key, verify fresh proofs with the reference verifier, compare with native reference proof bytes under fixed blinding, reject malformed assignments/keys and failed blinding, and exercise scalar, pairing and real SIMD kernels. Node exercises the actual WASM binary; multi-engine browser tests and physical-device release checks remain in the DSL integration suite.
@@ -44,4 +46,4 @@ cargo test --release --features setup --lib write_wasm_fixtures -- --ignored
 
 Enable `simd128` for shipping browser builds. SIMD and scalar reference builds are separate binaries. Do not enable relaxed SIMD. `build::OPTIMIZED_WASM_CFG` permits early kernel inlining only when the final module receives the bounded Binaryen recipe accepted by `build::has_field_postpass`; enabling that cfg without the postlink pass can regress performance. The DSL's existing compiler invokes this policy and retains responsibility for wasm-pack packaging, memory/import contracts, and worker initialization.
 
-The code was extracted from Zolana's CPU prover after the CPU-only correctness gate. See `IMPORT.md` and `THIRD_PARTY_NOTICES` for provenance. End-to-end performance benchmarks remain with the application circuits in Zolana; extraction itself adds no performance claim.
+The code was extracted from Zolana's CPU prover after the CPU-only correctness gate. See `IMPORT.md` for provenance. End-to-end performance benchmarks remain with the application circuits in Zolana; extraction itself adds no performance claim.

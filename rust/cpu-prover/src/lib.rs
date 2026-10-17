@@ -218,6 +218,7 @@ impl Prover {
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../tests/proof/security.rs"]
 mod security_tests;
 
 #[cfg(all(
@@ -226,4 +227,5 @@ mod security_tests;
     feature = "test-support",
     feature = "wasm-prover"
 ))]
+#[path = "../tests/wasm/smoke.rs"]
 mod wasm_tests;
