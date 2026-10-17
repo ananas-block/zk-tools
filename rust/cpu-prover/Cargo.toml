@@ -1,0 +1,47 @@
+[package]
+name = "zk-tools-cpu-prover"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "BN254 Groth16 CPU prover with portable WebAssembly SIMD kernels"
+repository = "https://github.com/helius-labs/zk-tools"
+
+[dependencies]
+ark-bn254 = "0.6"
+ark-ec = "0.6"
+ark-ff = "0.6"
+ark-groth16 = { version = "0.6", default-features = false, features = ["std"] }
+ark-poly = { version = "0.6", default-features = false, features = ["std"] }
+ark-relations = { version = "0.6", default-features = false, features = ["std"] }
+ark-serialize = "0.6"
+ark-std = { version = "0.6", features = ["getrandom"] }
+rayon = { version = "1", optional = true }
+sha2 = "0.10"
+thiserror = "2"
+wasm-bindgen = { version = "0.2", optional = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.2.17", features = ["js"] }
+
+[features]
+default = []
+parallel = ["dep:rayon", "ark-groth16/parallel", "ark-poly/parallel"]
+wasm = ["dep:wasm-bindgen"]
+wasm-prover = ["wasm"]
+# Explicit opt-in; production APIs always draw secure nonzero blinding.
+test-support = []
+setup = []
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+proptest = "1"
+num-bigint = "0.4"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(zk_tools_wasm_opt)']
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+overflow-checks = true

@@ -23,3 +23,7 @@ GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -o /tmp/zolana-prover.wasm ./prover-w
 ```
 
 `prover-wasm`'s proof test needs the staged 2x2 key from the web SDK layout and skips otherwise; the web and mobile SDKs run the proving gates against their staged keys.
+
+## Rust CPU engine
+
+[`rust/cpu-prover/`](rust/cpu-prover/README.md) contains the reusable Rust BN254 Groth16 CPU engine, including portable WASM SIMD, native/property tests, proof-blinding security gates and standalone WASM checks. It is consumed directly as a Cargo dependency; the existing Go bridges are unchanged.

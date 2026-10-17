@@ -1,0 +1,22 @@
+{
+  "checkedUtc": "2026-10-17T17:52:37.931253+00:00",
+  "platform": "macOS Apple Silicon",
+  "native": {
+    "setup": {
+      "passed": 27,
+      "ignoredFixtureGenerator": 1
+    },
+    "setup,parallel": {
+      "passed": 27,
+      "ignoredFixtureGenerator": 1
+    },
+    "proofEquivalencePropertyCases": 64,
+    "blindingScalars": "full-field randomized; boundary equations tested separately"
+  },
+  "standaloneWasm": {
+    "runtime": "Node.js",
+    "scalarTestsPassed": 6,
+    "simdTestsPassed": 7
+  },
+  "scope": "Standalone engine tests. Browser integration and physical mobile qualification belong to consuming applications."
+}

@@ -1,0 +1,22 @@
+{
+  "sourceRepository": "https://github.com/helius-labs/zolana",
+  "baseCommit": "2d9399e518a40e186b72a2cb038e5bfac4778793",
+  "dirtyCpuOnlyFollowUp": true,
+  "sha256": {
+    "compiled_matrices.rs": "a03f238efa53c6d3c9fdd89728f22b3892036f23c33e974a3494f213dc721033",
+    "curve.rs": "f43a2be7a6af3c2be924ecec767dae86f21a86ef2713a9124343015e6d21fcaa",
+    "curve_simd.rs": "34c249ce2a1d74b552b6f07ab8393a9cacc616d45dbb904d3af1bb8b79cd8cea",
+    "glv.rs": "1426a8992414a13dd2e980b48d9ee0c75cb800c45fab6a8310c23f63de5e40d2",
+    "pairing.rs": "905b03aaa05120483ac082c92b8182506c974fba0f31153df9234b5bfdd2ac32",
+    "pairing_tests.rs": "5bcb5c07a9508625018cf7b5bb1f37e3a5762995a2cbaa598a4dff929e455c17",
+    "proof.rs": "b4a835777a0d077aa9786ee4b6b84911df78b741af71cffae2c26dd50ded6b97",
+    "proof_finish.rs": "e6911dd9f22b53d8f37623bf087265d334aefbcaf11033cc5c40e8a4cd428da9",
+    "reduction/coset_fft/six_step.rs": "847305510f7c475c9120c0e17f3446fb03218a9ecb9b00ab8c49c2296f19d783",
+    "reduction/coset_fft.rs": "036d736e4a60ec28484524bf9ac15d18f91226fd230783c7688cedb7e6de139f",
+    "reduction.rs": "a9a2a89a03ef9f1e80f79bfcf1df997b7a269f7a483f9a989f32c2e176b55d8f",
+    "scalar_field.rs": "7c83c23e80c84a693e355ac5b80e6000527a5fe013aad1aa8ca84ae07f934364",
+    "zkey.rs": "51b41305783ec0e8b7222239106c0ff6a899c4de74dfa8e197d3ed322a8b487f",
+    "groth16.rs": "00d3a6728c3e476aca4b9174b152ab34284a4220d0222dacc5acf00e19870a91",
+    "synthesis.rs": "b1760f420e21d82ea1a280b6c907a78d0411c97aa409d379d88410afc343df0f"
+  }
+}

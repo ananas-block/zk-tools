@@ -3,3 +3,5 @@
 *.a
 *.h
 dist/
+/rust/cpu-prover/target/
+/rust/cpu-prover/pkg/
